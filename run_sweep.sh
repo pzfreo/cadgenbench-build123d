@@ -56,7 +56,34 @@ FIXES="$(sed 's/#.*//' "$LIST" | tr -d '[:blank:]' | grep -E '^[0-9]+$' || true)
 n="$(printf '%s\n' "$FIXES" | grep -c . || true)"
 [[ "$n" -gt 0 ]] || { echo "no fixture ids in $LIST"; exit 1; }
 
+# ---- provenance stamp: tie this run to the exact code that produced it ----
+GIT_COMMIT="$(git -C "$HERE" rev-parse HEAD 2>/dev/null || echo unknown)"
+GIT_BRANCH="$(git -C "$HERE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+if git -C "$HERE" diff --quiet 2>/dev/null && git -C "$HERE" diff --cached --quiet 2>/dev/null; then
+  GIT_DIRTY=false
+else
+  GIT_DIRTY=true
+  git -C "$HERE" diff HEAD > "$HERE/results/$RUN/uncommitted.patch" 2>/dev/null || true
+fi
+TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FIX_JSON="$(printf '%s\n' "$FIXES" | awk 'NF{if(c++)printf ",";printf "\"%s\"",$0}')"
+cat > "$HERE/results/$RUN/run_meta.json" <<JSON
+{
+  "run": "$RUN",
+  "timestamp_utc": "$TS",
+  "model": "$MODEL",
+  "mcp_spec": "$MCP_SPEC",
+  "git_commit": "$GIT_COMMIT",
+  "git_branch": "$GIT_BRANCH",
+  "git_dirty": $GIT_DIRTY,
+  "fixture_list": "$LIST",
+  "fixtures": [$FIX_JSON]
+}
+JSON
+[[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
+
 echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL, mcp=$MCP_SPEC"
+echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) -> results/$RUN/run_meta.json"
 echo
 
 printf '%s\n' "$FIXES" | xargs -P "$JOBS" -I{} bash "$HERE/run_sweep.sh" --one {} "$RUN" "$MODEL" "$MCP_SPEC"

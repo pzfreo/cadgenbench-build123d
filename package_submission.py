@@ -38,7 +38,11 @@ def proxy_gate(step_path):
         from build123d import Compound
 
         shape = Compound(children=list(solids))
-    return _gate_report(shape)
+    # exact=True: packaging is a deliberate one-off, so use the authoritative
+    # topology-stitch mesh gate. The default (inline budget) falls back to the
+    # fast coordinate-weld check on large parts, which false-flags valid solids
+    # (a packaged big editing fixture would be wrongly marked FAIL).
+    return _gate_report(shape, exact=True)
 
 
 def main():

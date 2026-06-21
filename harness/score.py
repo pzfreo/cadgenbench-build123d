@@ -36,7 +36,10 @@ def solid(path):
 
 def validity(path):
     s = solid(path)
-    rep = _gate_report(s)
+    # exact=True: this is a deliberate one-off check, so use the authoritative
+    # topology-stitch mesh gate. Without it, the inline budget falls back to the
+    # fast coordinate-weld check on large parts, which false-flags valid solids.
+    rep = _gate_report(s, exact=True)
     print("=== VALIDITY GATE ===")
     print("PASS" if rep["passes_gate"] else "FAIL")
     for r in rep["reasons"]:

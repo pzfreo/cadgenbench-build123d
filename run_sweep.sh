@@ -35,6 +35,15 @@ if [[ "${1:-}" == "--one" ]]; then
   fi
   "$HERE/harness/run_fixture.sh" "$IN" "$WORK" "$MODEL" "$MCP_SPEC" \
         > "$WORKROOT/${fid}.driver.log" 2>&1 || echo "[$fid] run_fixture returned nonzero"
+  # Save a readable, committable run log as verification evidence. stream_filter
+  # drops the init event (paths/session id) and image blocks, and truncates — so
+  # filtered.log is safe to publish. Raw stream.jsonl stays in work/ (gitignored:
+  # huge, embeds base64 renders).
+  if [[ -f "$WORK/stream.jsonl" ]]; then
+    mkdir -p "$HERE/logs/$RUN"
+    python3 "$HERE/harness/stream_filter.py" "$WORK" < "$WORK/stream.jsonl" >/dev/null 2>&1 || true
+    [[ -f "$WORK/filtered.log" ]] && cp "$WORK/filtered.log" "$HERE/logs/$RUN/${fid}.log"
+  fi
   if [[ -f "$WORK/output.step" ]]; then
     cp "$WORK/output.step" "$RESULTS/$fid/output.step"
     echo "[$fid] DONE ($(wc -c < "$WORK/output.step" | tr -d ' ') bytes)"

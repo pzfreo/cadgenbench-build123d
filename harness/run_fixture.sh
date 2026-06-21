@@ -61,7 +61,7 @@ claude -p "$(cat prompt.txt)" \
   --strict-mcp-config \
   --dangerously-skip-permissions \
   --disable-slash-commands \
-  --allowedTools "mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns" \
+  --allowedTools "mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance" \
   > stream.jsonl 2>&1
 
 echo

@@ -68,9 +68,9 @@ n="$(printf '%s\n' "$FIXES" | grep -c . || true)"
 # ---- provenance stamp: tie this run to the exact code that produced it ----
 GIT_COMMIT="$(git -C "$HERE" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$HERE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-if git -C "$HERE" diff --quiet 2>/dev/null && git -C "$HERE" diff --cached --quiet 2>/dev/null; then
-  GIT_DIRTY=false
-else
+GIT_DIRTY=false
+if [[ -n "$(git -C "$HERE" status --porcelain 2>/dev/null)" ]]; then
+  # porcelain catches untracked files too, which `git diff` misses
   GIT_DIRTY=true
   git -C "$HERE" diff HEAD > "$HERE/results/$RUN/uncommitted.patch" 2>/dev/null || true
 fi

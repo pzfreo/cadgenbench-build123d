@@ -16,8 +16,10 @@ Usage:
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 CANDIDATE_NAMES = ("output.step", "output.stp", "output.stl", "output.obj", "output.off", "output.3mf", "output.ply")
@@ -45,6 +47,84 @@ def proxy_gate(step_path):
     return _gate_report(shape, exact=True)
 
 
+def build_submission_zip(root, manifest, full_set_path, submitter, name):
+    """Build the upload-ready zip: meta.json + every fixture dir at the root.
+
+    Pads to the canonical full fixture set (CADGenBench requires every sample dir
+    present; missing outputs score 0). meta.json's notes are auto-stamped with the
+    exact system from run_meta — model, resolved build123d-mcp version, and the
+    cadgenbench-build123d commit (which pins the prompts/harness) — so the upload
+    is self-describing. agent_url is the commit permalink.
+    """
+    rm = manifest.get("run_meta", {})
+    model = rm.get("model", "unknown")
+    mcp_version = (
+        rm.get("mcp_version")
+        or manifest.get("resolved_versions", {}).get("build123d_mcp")
+        or "unknown"
+    )
+    commit = rm.get("git_commit", "unknown")
+
+    ids = []
+    for line in Path(full_set_path).read_text().splitlines():
+        tok = line.split("#", 1)[0].strip()
+        if tok.isdigit():
+            ids.append(tok)
+    if not ids:
+        sys.exit(f"no fixture ids in {full_set_path}")
+
+    n_out = sum(1 for fid in ids if (root / fid / "output.step").exists())
+    agent_url = (
+        f"https://github.com/pzfreo/cadgenbench-build123d/tree/{commit}"
+        if commit and commit != "unknown"
+        else "https://github.com/pzfreo/cadgenbench-build123d"
+    )
+    notes = (
+        f"Model {model} + build123d-mcp {mcp_version} (gate-equipped MCP server). "
+        f"Harness + prompts: cadgenbench-build123d @ {commit[:12]}. "
+        f"{n_out}/{len(ids)} fixtures produced."
+    )[:500]
+    meta = {
+        "submitter_name": submitter,
+        "submission_name": name,
+        "agent_url": agent_url,
+        "notes": notes,
+        "agree_to_publish": True,
+    }
+
+    stage = Path("submit") / root.name
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
+    (stage / "meta.json").write_text(json.dumps(meta, indent=2))
+    for fid in ids:
+        d = stage / fid
+        d.mkdir()
+        out = root / fid / "output.step"
+        if out.exists() and out.stat().st_size > 0:
+            shutil.copy(out, d / "output.step")
+        else:
+            (d / ".keep").write_text("no candidate submitted\n")
+
+    zip_path = Path("submit") / f"{root.name}.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(stage / "meta.json", "meta.json")
+        for fid in ids:
+            for fn in ("output.step", ".keep"):
+                f = stage / fid / fn
+                if f.exists():
+                    zf.write(f, f"{fid}/{fn}")
+    print(f"\n=== submission zip: {zip_path} ===")
+    print(f"  fixtures        : {len(ids)} dirs, {n_out} with output.step")
+    print(f"  submitter_name  : {submitter}")
+    print(f"  submission_name : {name}")
+    print(f"  agent_url       : {agent_url}")
+    print(f"  notes           : {notes}")
+    return zip_path
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("results_dir", help="a results/<run> directory holding <id>/output.step subdirs")
@@ -54,6 +134,14 @@ def main():
         metavar="PATH",
         help="path to cadgenbench sanity_check_submission.py — the authoritative gate",
     )
+    ap.add_argument(
+        "--zip", action="store_true", help="build the upload-ready submission zip (auto meta.json)"
+    )
+    ap.add_argument(
+        "--full-set", default="splits/all.txt", help="canonical full fixture-id list to pad the zip to"
+    )
+    ap.add_argument("--submitter", default="pzfreo", help="meta.json submitter_name")
+    ap.add_argument("--name", default="pzfreo", help="meta.json submission_name")
     args = ap.parse_args()
 
     root = Path(args.results_dir)
@@ -134,9 +222,12 @@ def main():
     else:
         print("official gate     : not run — pass --official-sanity-check PATH before submitting")
     print(f"manifest          : {root / 'manifest.json'}")
+    if args.zip:
+        build_submission_zip(root, manifest, args.full_set, args.submitter, args.name)
+
     print("\nnext steps:")
     print("  1. run the official sanity check on every output.step (see CADGenBench docs)")
-    print("  2. zip the run directory and upload at")
+    print("  2. upload the submission zip at")
     print("     https://huggingface.co/spaces/HuggingAI4Engineering/CADGenBench")
 
 

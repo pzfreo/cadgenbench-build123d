@@ -66,16 +66,24 @@ tail -n0 -f work/opus48-v1/<id>_run/stream.jsonl \
 ## Validate / package the submission
 
 ```bash
-uv run --with build123d-mcp --with trimesh --with scipy \
-    python package_submission.py results/opus48-v1 \
+uv run --python 3.12 --with build123d-mcp --with trimesh --with scipy \
+    python package_submission.py results/opus48-v1 --zip \
     --official-sanity-check /path/to/cadgenbench/sanity_check_submission.py
 ```
 
 This writes `results/opus48-v1/manifest.json` (present / missing / gate verdict
-per fixture). The **build123d-mcp gate is only a proxy** — the authoritative gate
-is CADGenBench's own `sanity_check_submission.py`; always run it (via
-`--official-sanity-check`) before uploading. Then zip the run directory and
-submit it on the [leaderboard Space](https://huggingface.co/spaces/HuggingAI4Engineering/CADGenBench).
+per fixture) and, with `--zip`, the upload-ready `submit/opus48-v1.zip` — the
+full fixture set with an auto-generated `meta.json` whose notes are stamped from
+the run's provenance (model + resolved build123d-mcp version + the
+cadgenbench-build123d commit that pins the prompts), `agent_url` set to that
+commit's permalink, and `submitter_name`/`submission_name` = `pzfreo` (override
+with `--submitter` / `--name`). The validity gate runs `exact=True` so large
+parts aren't false-flagged.
+
+The **build123d-mcp gate is only a proxy** — the authoritative gate is
+CADGenBench's own `sanity_check_submission.py`; always run it (via
+`--official-sanity-check`) before uploading `submit/opus48-v1.zip` on the
+[leaderboard Space](https://huggingface.co/spaces/HuggingAI4Engineering/CADGenBench).
 
 ## Layout
 

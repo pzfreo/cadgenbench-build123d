@@ -76,12 +76,17 @@ if [[ -n "$(git -C "$HERE" status --porcelain 2>/dev/null)" ]]; then
 fi
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 FIX_JSON="$(printf '%s\n' "$FIXES" | awk 'NF{if(c++)printf ",";printf "\"%s\"",$0}')"
+# Resolve the spec to the actual installed version (e.g. build123d-mcp@latest -> 0.3.52)
+# so provenance pins a concrete version, not a moving '@latest'.
+MCP_VERSION="$(uvx --python 3.12 "$MCP_SPEC" --version 2>/dev/null | awk '{print $NF}' || true)"
+[[ -n "$MCP_VERSION" ]] || MCP_VERSION="unknown"
 cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 {
   "run": "$RUN",
   "timestamp_utc": "$TS",
   "model": "$MODEL",
   "mcp_spec": "$MCP_SPEC",
+  "mcp_version": "$MCP_VERSION",
   "git_commit": "$GIT_COMMIT",
   "git_branch": "$GIT_BRANCH",
   "git_dirty": $GIT_DIRTY,
@@ -92,7 +97,7 @@ JSON
 [[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
 
 echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL, mcp=$MCP_SPEC"
-echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) -> results/$RUN/run_meta.json"
+echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION -> results/$RUN/run_meta.json"
 echo
 
 printf '%s\n' "$FIXES" | xargs -P "$JOBS" -I{} bash "$HERE/run_sweep.sh" --one {} "$RUN" "$MODEL" "$MCP_SPEC"

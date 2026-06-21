@@ -61,6 +61,29 @@ def main():
         sys.exit(f"no <id>/ subdirectories under {root}")
 
     manifest = {"run": root.name, "fixtures": {}}
+
+    # Fold in the sweep-time provenance stamp (git revision, model, mcp_spec) and
+    # the package versions resolved here — together they pin the exact system.
+    meta_path = root / "run_meta.json"
+    if meta_path.exists():
+        try:
+            manifest["run_meta"] = json.loads(meta_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    def _ver(name):
+        try:
+            return _pkg_version(name)
+        except PackageNotFoundError:
+            return None
+
+    manifest["resolved_versions"] = {
+        "build123d_mcp": _ver("build123d-mcp"),
+        "build123d": _ver("build123d"),
+        "note": "resolved at packaging time; the run logs hold the authoritative sweep-time version",
+    }
+
     n_present = n_valid = n_official_pass = 0
 
     for d in fixtures:

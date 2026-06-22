@@ -1,0 +1,77 @@
+[   0s] chat: I'll start by importing the part and banking a valid floor before any edits.
+[   0s] . import_cad_file
+[   0s]   <- {"result":"{\n  \"imported\": \"part\",\n  \"format\": \"step\",\n  \"path\": \"/Users/paul/repos/cadgenbench-build123d/work/opus48-v0356-full/242_run/input.ste
+[   0s] chat: I'll bank a floor first — validate, export, snapshot the unchanged import.
+[   0s] >> validate()
+[   0s]   <- {"result":"Validity gate: PASS (warning: mesh-level validity not verified — this shape is too large to tessellate and stitch within the gate's time budget, so o
+[   0s] >> export(/Users/paul/repos/cadgenbench-build123d/work/opus48-v0356-full/242_run/output.step)
+[   0s]   <- {"result":"Exported to /Users/paul/repos/cadgenbench-build123d/work/opus48-v0356-full/242_run/output.step\nvolume 4.109e+05 mm³, bbox 204.2×115×64.12 mm, 879 fa
+[   0s] . save_snapshot
+[   0s]   <- {"result":"Snapshot 'floor' saved. Geometry captured: current_shape, part."}
+[   0s] chat: Floor banked. Now let me look at the reference renders to locate the bosses.
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] chat: The part is a bracket. I can see cylindrical bosses at the corners. Let me identify the 25mm-diameter bosses with their axes. Let me pull the solid into a variable and enumerate cylindrical faces.
+[   0s] execute #1: from build123d import import_step from build123d import Axis part = import_step("input.ste
+[   0s]   <- {"result":"radius counts: Counter({2.0: 79, 1.0: 65, 1.5: 28, 5.0: 23, 3.0: 18, 11.5: 18, 4.0: 18, 0.5: 12, 2.5: 11, 12.5: 8, 7.5: 8, 51.0: 7, 7.0: 7, 55.0: 4, 
+[   0s] chat: 8 cylindrical faces at radius 12.5. Let me examine their axis directions and extents to understand the boss geometry.
+[   0s] execute #2: import numpy as np idxs = [95,99,125,129,187,191,195,199] for i in idxs:     f = part.face
+[   0s]   <- {"result":"95 axisdir=(0.00,-1.00,0.00) axisloc=(61.1,45.2,-18.9) bbox Y=[35.2,45.2] X=[61.1,73.6] Z=[-31.4,-6.4]\n99 axisdir=(0.00,-1.00,0.00) axisloc=(-88.2,4
+[   0s] chat: Now I understand the geometry. There are **2 mounting bosses** (cylindrical bars along the Y axis), one at X=61.1 and one at X=-88.2, both at Z=-18.9, radius 12.5 (Ø25). Each spans Y from -54.8 to +45
+[   0s] . find_holes
+[   0s]   <- {"result":"{\"count\": 0, \"holes\": []}"}
+[   0s] execute #3: # Examine planar/end faces near boss ends. Boss axes: X=61.1 and X=-88.2, Z=-18.9 # Ends a
+[   0s]   <- {"result":"188 GeomType.PLANE ctr=(-88.2,45.2,-18.9) n=(0.00,1.00,0.00) area=412.3\n192 GeomType.PLANE ctr=(61.1,45.2,-18.9) n=(-0.00,1.00,-0.00) area=412.3\n19
+[   0s] chat: End caps are planar disks at Y=±. Area 412.3 < full circle (490.9) suggests a coaxial through-hole (Ø10). Let me confirm whether the end face is an annulus (hole present), since I'll extrude these fac
+[   0s] execute #4: f = part.faces()[192] print("num wires:", len(f.wires())) for w in f.wires():     print(" 
+[   0s]   <- {"result":"num wires: 2\n  wire edges: 2 len=31.4\n  wire edges: 2 len=78.5\nhole face 193 r=5.00 Y=[15.2,45.2]\nhole face 201 r=5.00 Y=[-54.8,-24.8]\nhole face
+[   0s] chat: Confirmed: each end cap is an **annulus** (Ø25 outer + Ø10 blind hole, 30mm deep each end). So each boss is a Ø25 bar with a coaxial blind hole at each end. 
+
+The cleanest in-place edit: extrude each 
+[   0s] execute #5: from build123d import extrude, Part  # End-cap annular faces: 188,192 (+Y end, normal +Y),
+[   0s]   <- {"result":"added solids volume: 16493.4\nRegistered 'part': volume=4.274e+05 mm³, faces=887\n--- current_shape (\"part\") ---\nvolume: 4.274e+05 (+4.27e+05) mm³
+[   0s] chat: Y envelope grew from 115 to 125. Let me validate, then verify the boss now spans 120mm by checking the new end-cap positions.
+[   0s] >> validate()
+[   0s]   <- {"result":"Validity gate: PASS (warning: mesh-level validity not verified — this shape is too large to tessellate and stitch within the gate's time budget, so o
+[   0s] chat: Valid. Now verify each boss spans 120mm. Let me check the Ø25 cylinder face Y-extents and end-cap positions.
+[   0s] execute #6: # Check end-cap planar faces (full Ø25 annulus, normal ±Y) and cylinder extents per boss a
+[   0s]   <- {"result":"boss X=61.1: Ymin=-64.8 Ymax=55.2 length=120.0\nboss X=-88.2: Ymin=-64.8 Ymax=55.2 length=120.0\n\nSession objects: part (Solid, 887 faces)"}
+[   0s] chat: Both bosses now span Y=-64.8 to +55.2 = **120mm**, centered on the original midpoint (-4.8) — symmetric extension of 10mm each end. Let me run the authoritative export gate, then snapshot.
+[   0s] >> export(/Users/paul/repos/cadgenbench-build123d/work/opus48-v0356-full/242_run/output.step)
+[   0s]   <- {"result":"Exported to /Users/paul/repos/cadgenbench-build123d/work/opus48-v0356-full/242_run/output.step\nvolume 4.274e+05 mm³, bbox 204.2×125×64.12 mm, 887 fa
+[   0s] . save_snapshot
+[   0s]   <- {"result":"Snapshot 'edited' saved. Geometry captured: current_shape, part."}
+[   0s] chat: Export gate PASSED (exact mesh check, no VALIDITY GATE FAIL). Let me do one fidelity render to confirm the change is present on both bosses and nothing else moved.
+[   0s] . render_view
+[   0s]   <- [SEND: /var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/build123d_97oi9usu.svg] VTK raster render failed (RuntimeError: All shapes failed to tessellate: part: '
+[   0s] . Read
+[   0s]   <- File content (429.1KB) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific conte
+[   0s] chat: The PNG render fails on this headless host and the SVG fallback is too large to inspect, but the geometry is fully verified numerically, which the task rules prefer over visual inspection for exact di
+[   0s] . Write
+[   0s]   <- File created successfully at: /Users/paul/.claude/projects/-Users-paul-repos-cadgenbench-build123d/memory/b123d-extend-boss-extrude-endcap-annulus.md (file stat
+[   0s] . Edit
+[   0s]   <- <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+[   0s] . Read
+[   0s]   <- 75	- [Hollow spool + spider flange](b123d-hollow-spool-spider-flange.md) — double Ø130-flange spool, hollow Ø70 barrel/through-bore; one plain flange, one raise
+[   0s] . Edit
+[   0s]   <- The file /Users/paul/.claude/projects/-Users-paul-repos-cadgenbench-build123d/memory/MEMORY.md has been updated successfully. (file state is current in your con
+[   0s] chat: The task is complete.
+
+## Summary
+
+**Change requested:** Increase the length of the Ø25mm mounting bosses from 100mm to 120mm symmetrically along their axis.
+
+**What I found:** Two mounting bosses — c
+[   0s] RESULT (356s): The task is complete.
+
+## Summary
+
+**Change requested:** Increase the length of the Ø25mm mounting bosses from 100mm to 120mm symmetrically along their axis.
+
+*

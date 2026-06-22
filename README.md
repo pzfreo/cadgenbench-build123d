@@ -63,6 +63,36 @@ tail -n0 -f work/opus48-v1/<id>_run/stream.jsonl \
     | python3 harness/stream_filter.py work/opus48-v1/<id>_run
 ```
 
+## Second system: Codex / GPT-5.5
+
+The same pipeline can be driven by the **Codex CLI + GPT-5.5** instead of Claude
+Code, against the *same* build123d-mcp and the *same* generic prompts — a second
+*system* to compare, not a re-tuned one. The model id selects the backend:
+`claude-*` routes to Claude Code, anything else routes to the Codex driver.
+
+```bash
+# logged-in `codex` CLI required (codex login); uvx + uv as before
+./run_sweep.sh splits/test.txt gpt55-v1 gpt-5.5
+```
+
+Each fixture runs through `harness/run_fixture_codex.sh`, which mirrors the Claude
+driver: it builds the identical prompt, attaches the drawing/renders to the model
+(`codex exec -i …`, plus Codex's built-in `view_image` tool for mid-run zoom
+crops), wires build123d-mcp via `-c mcp_servers.*` TOML overrides (Codex has no
+`--mcp-config` flag), and writes the same `output.step` + `stream.jsonl`. Watch
+one live with the Codex stream filter:
+
+```bash
+tail -n0 -f work/gpt55-v1/<id>_run/stream.jsonl \
+    | python3 harness/stream_filter_codex.py work/gpt55-v1/<id>_run
+```
+
+Two behavioural differences from the Claude path, both disclosed for honesty:
+Codex has no per-call tool allowlist, so the model sees all of build123d-mcp's
+tools (the Claude driver curates a 17-tool subset); and the prompts' "read
+`input.png`" / zoom-crop guidance is satisfied via `-i` + `view_image` rather
+than Claude Code's `Read` + `Bash`-crop. The prompts themselves are unchanged.
+
 ## Validate / package the submission
 
 ```bash
@@ -91,9 +121,11 @@ CADGenBench's own `sanity_check_submission.py`; always run it (via
 harness/
   fetch_fixture.py        pull a fixture's public inputs from the HF dataset
   run_fixture.sh          drive claude -p + build123d-mcp; auto-selects the prompt
+  run_fixture_codex.sh    same, driven by codex exec + GPT-5.5 (second system)
   prompt_generation.txt   drawing -> solid (checkpoint-first, validity-as-invariant)
   prompt_editing.txt      STEP + change request -> edited solid
-  stream_filter.py        live readable log of a single run
+  stream_filter.py        live readable log of a single Claude run
+  stream_filter_codex.py  live readable log of a single Codex run
   score.py                local proxy: validity gate (+ indicative shape score vs GT)
 run_sweep.sh              batch a fixture list into results/<run>/<id>/output.step
 package_submission.py     validity-check the layout + write manifest.json

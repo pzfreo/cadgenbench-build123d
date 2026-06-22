@@ -43,13 +43,17 @@ else
   TASK="generation"
 fi
 
+# The benchmark runs in a trusted, isolated environment, so we launch the MCP
+# server with --no-sandbox: the AST check is skipped and user code gets full
+# builtins. This removes sandbox friction (blocked getattr/vars, retries) that
+# cost the agent turns. Requires build123d-mcp >= 0.3.54.
 cat > "$WORK/mcp_config.json" <<JSON
-{"mcpServers":{"build123d":{"command":"uvx","args":["--python","3.12","$MCP_SPEC"]}}}
+{"mcpServers":{"build123d":{"command":"uvx","args":["--python","3.12","$MCP_SPEC","--no-sandbox"]}}}
 JSON
 
 echo "fixture: $FIX  ($TASK)"
 echo "work:    $WORK"
-echo "model:   $MODEL    mcp: $MCP_SPEC"
+echo "model:   $MODEL    mcp: $MCP_SPEC  (--no-sandbox)"
 echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter.py $WORK"
 echo "running claude -p ..."
 

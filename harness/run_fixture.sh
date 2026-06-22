@@ -58,6 +58,11 @@ echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter.py $
 echo "running claude -p ..."
 
 cd "$WORK"
+# Eagerly load the build123d MCP tool schemas instead of deferring them behind
+# the ToolSearch tool (Claude Code's default). Deferral cost ~3 ToolSearch calls
+# per run, ~36% of them mismatching the tool names — pure wasted turns for a
+# fixed, known toolset. See docs.claude.com/en/mcp "Tool Search".
+export ENABLE_TOOL_SEARCH=false
 claude -p "$(cat prompt.txt)" \
   --model "$MODEL" \
   --output-format stream-json --verbose \

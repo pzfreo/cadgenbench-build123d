@@ -8,7 +8,9 @@
 #
 #   fixtures_file : one fixture id per line (# comments and blanks ignored)
 #   run_name      : names the work/ and results/ subdirectory for this sweep
-#   model         : claude model id            (default: claude-opus-4-8)
+#   model         : agent model id             (default: claude-opus-4-8).
+#                   claude-* routes to Claude Code; any other id (e.g. gpt-5.5)
+#                   routes to the Codex CLI driver. Both produce one output.step.
 #   mcp_spec      : build123d-mcp spec for uvx  (default: build123d-mcp@latest;
 #                   pass "build123d-mcp @ file:///path" to test a local build)
 #   jobs          : fixtures to run concurrently (default 4). Each fixture has
@@ -18,7 +20,8 @@
 # Watch one fixture live:
 #   tail -n0 -f work/<run>/<id>_run/stream.jsonl | python3 harness/stream_filter.py work/<run>/<id>_run
 #
-# Requires: claude (Claude Code), uvx, and uv on PATH.
+# Requires: uvx + uv, and the agent CLI for your chosen model — claude (Claude
+# Code) for claude-* models, or codex (Codex CLI, logged in) for others.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -33,7 +36,14 @@ if [[ "${1:-}" == "--one" ]]; then
         > "$WORKROOT/${fid}.fetch.log" 2>&1; then
     echo "[$fid] FETCH FAILED (see work/$RUN/${fid}.fetch.log)"; exit 0
   fi
-  "$HERE/harness/run_fixture.sh" "$IN" "$WORK" "$MODEL" "$MCP_SPEC" \
+  # Pick the agent driver by model id: claude-* -> Claude Code, anything else
+  # (e.g. gpt-5.5) -> Codex CLI. Both drivers take the same args and produce the
+  # same output.step / stream.jsonl / filtered.log layout.
+  case "$MODEL" in
+    claude*|"") DRIVER="run_fixture.sh";      FILTER="stream_filter.py" ;;
+    *)          DRIVER="run_fixture_codex.sh"; FILTER="stream_filter_codex.py" ;;
+  esac
+  "$HERE/harness/$DRIVER" "$IN" "$WORK" "$MODEL" "$MCP_SPEC" \
         > "$WORKROOT/${fid}.driver.log" 2>&1 || echo "[$fid] run_fixture returned nonzero"
   # Save a readable, committable run log as verification evidence. stream_filter
   # drops the init event (paths/session id) and image blocks, and truncates — so
@@ -41,7 +51,7 @@ if [[ "${1:-}" == "--one" ]]; then
   # huge, embeds base64 renders).
   if [[ -f "$WORK/stream.jsonl" ]]; then
     mkdir -p "$HERE/logs/$RUN"
-    python3 "$HERE/harness/stream_filter.py" "$WORK" < "$WORK/stream.jsonl" >/dev/null 2>&1 || true
+    python3 "$HERE/harness/$FILTER" "$WORK" < "$WORK/stream.jsonl" >/dev/null 2>&1 || true
     [[ -f "$WORK/filtered.log" ]] && cp "$WORK/filtered.log" "$HERE/logs/$RUN/${fid}.log"
   fi
   if [[ -f "$WORK/output.step" ]]; then

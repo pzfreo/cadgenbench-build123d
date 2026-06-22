@@ -58,6 +58,17 @@ echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter.py $
 echo "running claude -p ..."
 
 cd "$WORK"
+
+# Allowed toolset. Base set (both tasks) plus session_state/last_error/resolve —
+# recovery + debug + selector tools the agent demonstrably reached for in the
+# opus48 sweeps. shape_compare is editing-only (verify the edit changed only what
+# was asked). load_part/search_library (no library), the 2D-drawing-authoring
+# tools, reset, and diagnostics are intentionally excluded as irrelevant here.
+ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve"
+if [[ "$TASK" == "editing" ]]; then
+  ALLOWED="$ALLOWED,mcp__build123d__shape_compare"
+fi
+
 # Eagerly load the build123d MCP tool schemas instead of deferring them behind
 # the ToolSearch tool (Claude Code's default). Deferral cost ~3 ToolSearch calls
 # per run, ~36% of them mismatching the tool names — pure wasted turns for a
@@ -70,7 +81,7 @@ claude -p "$(cat prompt.txt)" \
   --strict-mcp-config \
   --dangerously-skip-permissions \
   --disable-slash-commands \
-  --allowedTools "mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance" \
+  --allowedTools "$ALLOWED" \
   > stream.jsonl 2>&1
 
 echo

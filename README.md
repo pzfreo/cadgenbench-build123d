@@ -75,6 +75,20 @@ Code, against the *same* build123d-mcp and the *same* generic prompts — a seco
 ./run_sweep.sh splits/test.txt gpt55-v1 gpt-5.5
 ```
 
+**Reasoning effort** is part of the scored system, so pin it explicitly with a
+`model:effort` suffix instead of letting it inherit `~/.codex/config.toml`:
+
+```bash
+./run_sweep.sh splits/test.txt gpt55-hi gpt-5.5:high   # -c model_reasoning_effort=high
+./run_sweep.sh splits/test.txt gpt55-lo gpt-5.5:low
+./run_sweep.sh splits/test.txt gpt55-md gpt-5.5        # no suffix -> config default
+```
+
+The driver splits the suffix off (`-m gpt-5.5 -c model_reasoning_effort=high`),
+and `run_meta.json` records `model` + `reasoning_effort` so the run is fully
+pinned (the packaged `meta.json` notes disclose the effort too). `claude-*`
+models ignore the suffix.
+
 Each fixture runs through `harness/run_fixture_codex.sh`, which mirrors the Claude
 driver: it builds the identical prompt, attaches the drawing/renders to the model
 (`codex exec -i …`, plus Codex's built-in `view_image` tool for mid-run zoom

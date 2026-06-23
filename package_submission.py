@@ -58,6 +58,12 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
     """
     rm = manifest.get("run_meta", {})
     model = rm.get("model", "unknown")
+    effort = rm.get("reasoning_effort")
+    model_desc = (
+        f"{model} (reasoning effort: {effort})"
+        if effort and effort != "config-default"
+        else model
+    )
     mcp_version = (
         rm.get("mcp_version")
         or manifest.get("resolved_versions", {}).get("build123d_mcp")
@@ -80,7 +86,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
         else "https://github.com/pzfreo/cadgenbench-build123d"
     )
     notes = (
-        f"Model {model} + build123d-mcp {mcp_version} (gate-equipped MCP server). "
+        f"Model {model_desc} + build123d-mcp {mcp_version} (gate-equipped MCP server). "
         f"Harness + prompts: cadgenbench-build123d @ {commit[:12]}. "
         f"{n_out}/{len(ids)} fixtures produced."
     )[:500]

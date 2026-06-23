@@ -70,6 +70,17 @@ MODEL="${3:-claude-opus-4-8}"
 MCP_SPEC="${4:-build123d-mcp@latest}"
 JOBS="${5:-4}"
 
+# A reasoning-effort suffix on the model id ("gpt-5.5:high", codex only) is part
+# of the scored system but otherwise silently inherits ~/.codex/config.toml.
+# Split it out so run_meta pins both the base model and the effort. The full
+# token (with suffix) is still what's passed to the driver, which re-splits it.
+REASONING_EFFORT="config-default"
+MODEL_ID="$MODEL"
+case "$MODEL" in
+  claude*|"") : ;;
+  *:*) REASONING_EFFORT="${MODEL##*:}"; MODEL_ID="${MODEL%%:*}" ;;
+esac
+
 mkdir -p "$HERE/work/$RUN" "$HERE/results/$RUN"
 FIXES="$(sed 's/#.*//' "$LIST" | tr -d '[:blank:]' | grep -E '^[0-9]+$' || true)"
 n="$(printf '%s\n' "$FIXES" | grep -c . || true)"
@@ -94,7 +105,8 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 {
   "run": "$RUN",
   "timestamp_utc": "$TS",
-  "model": "$MODEL",
+  "model": "$MODEL_ID",
+  "reasoning_effort": "$REASONING_EFFORT",
   "mcp_spec": "$MCP_SPEC",
   "mcp_version": "$MCP_VERSION",
   "git_commit": "$GIT_COMMIT",
@@ -106,7 +118,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 JSON
 [[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
 
-echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL, mcp=$MCP_SPEC"
+echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, mcp=$MCP_SPEC"
 echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION -> results/$RUN/run_meta.json"
 echo
 

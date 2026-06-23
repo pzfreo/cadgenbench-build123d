@@ -23,6 +23,15 @@ MODEL="${3:-gpt-5.5}"
 MCP_SPEC="${4:-build123d-mcp@latest}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
+# Optional reasoning-effort suffix on the model id: "gpt-5.5:high" -> model
+# "gpt-5.5" + effort "high" (passed to codex as model_reasoning_effort). No
+# suffix => inherit the user's ~/.codex/config.toml default. Effort is a scored
+# part of the system, so it's surfaced in the banner and recorded by run_sweep.
+MODEL_EFFORT=""
+case "$MODEL" in
+  *:*) MODEL_EFFORT="${MODEL##*:}"; MODEL="${MODEL%%:*}" ;;
+esac
+
 command -v codex >/dev/null || { echo "ERROR: 'codex' (Codex CLI) not on PATH"; exit 1; }
 command -v uvx   >/dev/null || { echo "ERROR: 'uvx' not on PATH"; exit 1; }
 
@@ -62,7 +71,7 @@ fi
 
 echo "fixture: $FIX  ($TASK)"
 echo "work:    $WORK"
-echo "model:   $MODEL    mcp: $MCP_SPEC  (--no-sandbox)"
+echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<config default>}    mcp: $MCP_SPEC  (--no-sandbox)"
 echo "images:  ${IMG_ARGS[*]:-<none>}"
 echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter_codex.py $WORK"
 echo "running codex exec ..."
@@ -81,6 +90,7 @@ uvx --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
 # skip-git-repo-check make it run unattended in a non-repo work dir.
 codex exec \
   --model "$MODEL" \
+  ${MODEL_EFFORT:+-c model_reasoning_effort="$MODEL_EFFORT"} \
   --cd "$WORK" \
   --skip-git-repo-check \
   --dangerously-bypass-approvals-and-sandbox \

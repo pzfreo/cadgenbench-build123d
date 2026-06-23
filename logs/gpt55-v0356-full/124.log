@@ -1,0 +1,85 @@
+[   0s] session 019ef3d1-b010-7df2-a71d-f0737b12d18a
+[   0s] chat: I’ll use the build123d MCP workflow for this CAD reconstruction. First I’m going to load the build123d tool instructions, then I’ll extract the printed dimensions into a working table before modeling.
+[   0s] . workflow_hints
+[   0s]   <- {"content": [{"type": "text", "text": "BUILD123D-MCP WORKFLOW GUIDE\n\n1. ORIENT FIRST\n   At the start of a session, call session_state() to see what geometry,
+[   0s] . health_check
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"render_png\": {\n    \"ok\": true,\n    \"bytes\": 4783\n  },\n  \"render_svg\": {\n    \"ok\": true,\n    \"bytes
+[   0s] . list_mcp_resources
+[   0s]   <- None
+[   0s] . list_mcp_resources
+[   0s]   <- {"content": [{"type": "text", "text": "{\"server\":\"build123d\",\"resources\":[{\"server\":\"build123d\",\"uri\":\"build123d://quickref\",\"name\":\"build123d_
+[   0s] chat: The build server is healthy, including STEP export. I’m pulling the modeling quick reference now so the script matches the MCP’s expected build123d idioms.
+[   0s] . read_mcp_resource
+[   0s]   <- {"content": [{"type": "text", "text": "{\"server\":\"build123d\",\"uri\":\"build123d://quickref\",\"contents\":[{\"uri\":\"build123d://quickref\",\"mimeType\":\
+[   0s] . read_mcp_resource
+[   0s]   <- {"content": [{"type": "text", "text": "{\"server\":\"build123d\",\"uri\":\"build123d://skill/modeling\",\"contents\":[{\"uri\":\"build123d://skill/modeling\",\"
+[   0s] chat: I’ve got the workflow loaded. I’m doing the one drawing-reading pass now and will capture the dimensions as parameters before switching over to geometry.
+[   0s] chat: Dimension table from the drawing, all in mm:
+
+- Overall horizontal center distances from the large left bore datum: `104.1`, `123.2`, `161.3`.
+- Large left hub: `Ø55` outside, `Ø40` bore, width `40`.
+
+[   0s] . reset
+[   0s]   <- {"content": [{"type": "text", "text": "Session reset."}], "structured_content": {"result": "Session reset."}}
+[   0s] chat: I’m starting the side-profile build now: exact bore diameters and center distances first, then I’ll add the section-derived Y-width steps and pockets.
+[   0s] execute #1: from build123d import * from math import atan2, degrees, sqrt  # Dimension table, all mm. 
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'bosses_exact': volume=6.055e+04 mm\u00b3, faces=16\n--- current_shape (\"bosses_exact\") ---\nvolume: 6.055e+
+[   0s] chat: The four boss bodies are in place with exact printed diameters and through bores. Next I’m fusing the side-view connecting arms as section-width solids rather than a flat single plate.
+[   0s] >> validate(bosses_exact)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS (warning: 4 disjoint solid bodies \u2014 a single-part task expects one fused solid; fuse them (Part(
+[   0s] execute #2: from math import atan2, degrees, sqrt  def beam_xz(x1, z1, x2, z2, thick, width):     dx, 
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'with_webs': volume=1.53e+05 mm\u00b3, faces=61\n--- current_shape (\"with_webs\") ---\nvolume: 1.53e+05 (+9.2
+[   0s] chat: The connecting arms have fused into a single solid. I’m validating that before cutting the pockets, since failed cuts on an invalid base would waste the later checks.
+[   0s] >> validate(with_webs)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 152968.3011,\n  \"watertight_manifold
+[   0s] chat: The base solid passes. I’m adding the section-style recessed pockets now: the cuts remove the side bands while preserving a 10 mm central core, matching the `7 + 10 + 7` section callouts.
+[   0s] execute #3: # Recess cutters: subtract from the two side bands only, leaving the printed 10 mm central
+[   0s]   <- {"content": [{"type": "text", "text": "Error: AttributeError: 'ShapeList' object has no attribute 'move'\n\nHint: ShapeList is not a Part \u2014 `Box() + Cylind
+[   0s] chat: The first pocket call hit a build123d operator gotcha: a raw `shape + shape` expression produced a ShapeList instead of a fused Part. No geometry was changed; I’m retrying with an explicit fused cutte
+[   0s] >> validate(with_webs)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 152968.3011,\n  \"watertight_manifold
+[   0s] chat: The pre-cut model is still valid. I’m applying the corrected pocket cutters now.
+[   0s] execute #4: def moved_copy(shape, loc):     return shape.move(loc)  def side_band_cutter(profile_shape
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'pocketed': volume=1.272e+05 mm\u00b3, faces=133\n--- current_shape (\"pocketed\") ---\nvolume: 1.272e+05 (-2.
+[   0s] chat: The side-band pocket cuts succeeded and changed the topology substantially. I’m validating the pocketed solid before adding lips and small surface details.
+[   0s] >> validate(pocketed)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 127179.3498,\n  \"watertight_manifold
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 8, \"holes\": [{\"axis\": [0.0, -1.0, 0.0], \"location\": [0.0, 20.0, -0.0], \"diameter\": 40.0, \"depth\": 4
+[   0s] . cross_sections
+[   0s]   <- {"content": [{"type": "text", "text": "[\n  {\n    \"position\": -19.6,\n    \"area\": 3632.4665\n  },\n  {\n    \"position\": -14.7,\n    \"area\": 3632.4665\n
+[   0s] chat: The pocketed model passes, and the Y cross-sections show the non-flat profile: wide boss faces, recessed side bands, and the retained center web. I’m adding raised 2.5 mm lip strips and the top/right 
+[   0s] execute #5: # Raised 2.5 mm side lips/rims called out in Section H-H and visible around pockets. def s
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'lipped': volume=1.328e+05 mm\u00b3, faces=173\n--- current_shape (\"lipped\") ---\nvolume: 1.328e+05 (+5.67e+
+[   0s] chat: The raised lip and right-side bridge features are added, and the through bores were re-cut afterward to keep the printed `Ø40` and `Ø13` features open. I’m validating and measuring the feature invento
+[   0s] >> validate(lipped)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 132849.3502,\n  \"watertight_manifold
+[   0s] . measure
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"volume\": 132849.3502,\n  \"area\": 51153.9602,\n  \"topology\": {\n    \"faces\": 173,\n    \"edges\": 544,\n    
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 6, \"holes\": [{\"axis\": [0.0, -1.0, 0.0], \"location\": [0.0, 20.0, -0.0], \"diameter\": 40.0, \"depth\": 4
+[   0s] . find_bosses
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 4, \"bosses\": [{\"axis\": [0.0, 1.0, -0.0], \"location\": [0.0, 20.0, -0.0], \"diameter\": 55.0, \"height\":
+[   0s] chat: The measured boss inventory now matches the drawing’s primary set: one `Ø55/Ø40` hub and three `Ø20/Ø13` bosses, all single-solid and valid. I’m doing one visual pass from top/front/isometric plus a c
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "image", "data": "iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAIAAAAVFBUnAAAbvklEQVR4Xu3dS7bbtoKGUSUr83HLE3DDI/GwMhI3PIHb8ohcDdVVqfQiSP4AAXDvlVainCPx
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "image", "data": "iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAIAAAAVFBUnAAAXD0lEQVR4Xu3dXYhz+UHH8f/Jy7w9z7Pb7q7aPlVQULytL1jRKgVtXQuCFBSs2puWIlIqUr1Q
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "image", "data": "iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAIAAAAVFBUnAAAgAElEQVR4XuzdebQk51nn+ed5IzLvrSottrwIG3nT4k2WZAP2sQ14Ay8sXjBgbHe3gQM99AGm
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "image", "data": "iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAIAAAAVFBUnAAAe6UlEQVR4Xu3dS3acyKKGUc5ZZz7V0gTU0Eg0LI/EDU/ArRqRb4NVebPyAQH8EQSw93KrKi2R
+[   0s] chat: The render pass matches the main topology: ring hub, three small bosses, diagonal ribs, side recesses, and stepped width. I’m keeping fillets conservative to avoid damaging the valid solid; the final 
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'valid_lipped_checkpoint' saved. Geometry captured: current_shape, bosses_exact, with_webs, pocketed, lipped."}]
+[   0s] chat: Checkpoint saved. I’m running the final validation, then exporting only if that gate passes.
+[   0s] >> validate(lipped)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 132849.3502,\n  \"watertight_manifold
+[   0s] >> export(lipped)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0356-full/124_run/output.step\nvolume 1.328e+05 mm\u00b3,
+[   0s] chat: Done. Exported the valid STEP file to:
+
+`/Users/paul/repos/cadgenbench-build123d/work/gpt55-v0356-full/124_run/output.step`
+
+Final validation passed as a single watertight solid. Key measured features
+[   0s] RESULT tokens in=1055824 out=7892

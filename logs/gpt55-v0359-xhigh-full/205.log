@@ -1,0 +1,174 @@
+[   0s] session 019effa1-86d9-7e81-a2a0-40c65ea8bc76
+[   0s] chat: I’ll use the build123d MCP tooling for this, starting by importing and validating the STEP exactly as requested before inspecting features.
+[   0s] chat: The build123d toolset is available. I’m loading the STEP now, then I’ll validate and snapshot the untouched import before doing any feature search.
+[   0s] . import_cad_file
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"imported\": \"part\",\n  \"format\": \"step\",\n  \"path\": \"/Users/paul/repos/cadgenbench-build123d/work/gpt55-v
+[   0s] >> validate(part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 14 mesh non-manifold edge(s) \u2014 faces meet >2-ways (self-touch / coincident faces); a CAD 
+[   0s] chat: The unchanged STEP imports as one solid, but the validity gate fails on mesh non-manifold edges while the B-rep itself is valid. I’m going to do a minimal healing pass first and get a valid baseline b
+[   0s] . list_mcp_resources
+[   0s]   <- {"content": [{"type": "text", "text": "{\"server\":\"build123d\",\"resources\":[{\"server\":\"build123d\",\"uri\":\"build123d://quickref\",\"name\":\"build123d_
+[   0s] . read_mcp_resource
+[   0s]   <- {"content": [{"type": "text", "text": "{\"server\":\"build123d\",\"uri\":\"build123d://quickref\",\"contents\":[{\"uri\":\"build123d://quickref\",\"mimeType\":\
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'raw_import_before_heal' saved. Geometry captured: current_shape, part."}], "structured_content": {"result": "Sn
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "14 defect(s) located (mesh_nonmanifold_edge):\n{\n  \"count\": 14,\n  \"defects\": [\n    {\n      \"kind\": \"mesh_nonma
+[   0s] chat: The defects are clustered at one narrow region around `x=-21, y=64.9, z=-5..5`, so the imported B-rep is probably self-touching at a local hole/rib interaction rather than globally broken. I’m setting
+[   0s] execute #1: from build123d import * part = import_step("input.step") show(part, "part") print("loaded 
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'part': volume=4.384e+05 mm\u00b3, faces=212\nloaded part volume 438355.7159 faces 212\n--- current_shape (\"p
+[   0s] execute #2: print(type(part)) print(hasattr(part, 'wrapped'), type(part.wrapped) if hasattr(part,'wrap
+[   0s]   <- {"content": [{"type": "text", "text": "<class 'build123d.topology.three_d.Solid'>\nTrue <class 'OCP.OCP.TopoDS.TopoDS_Solid'>\n['_wrapped', 'clean', 'fix', 'wra
+[   0s] execute #3: import inspect print('fix sig', inspect.signature(part.fix)) print('clean sig', inspect.si
+[   0s]   <- {"content": [{"type": "text", "text": "fix sig () -> 'Self'\nclean sig () -> 'Self'\nfix - try to fix shape if not valid\nclean\n\n        Remove internal edges
+[   0s] chat: There are built-in `fix()` and `clean()` methods on the imported solid, so I’m trying those first. That keeps the repair localized to topology cleanup before I consider any relief cuts.
+[   0s] execute #4: baseline = part.fix().clean() show(baseline, "baseline") print("baseline volume", round(ba
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'baseline': volume=4.384e+05 mm\u00b3, faces=212\nbaseline volume 438355.721828 faces 212 edges 532\n\nSession
+[   0s] chat: The topology cleanup changed only edge bookkeeping and a negligible volume amount, which is promising. I’m validating that healed baseline now before using it as the rollback point.
+[   0s] >> validate(baseline)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 14 mesh non-manifold edge(s) \u2014 faces meet >2-ways (self-touch / coincident faces); a CAD 
+[   0s] chat: `fix().clean()` did not clear the mesh self-touch. I’m going to try the next-minimal OCCT repair: unify same-domain/coincident faces and edges, then validate the resulting solid.
+[   0s] execute #5: from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain from OCP.TopoDS import TopoDS us
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'unified': volume=4.384e+05 mm\u00b3, faces=212\n<class 'build123d.topology.three_d.Solid'> 438355.721828 212 
+[   0s] >> validate(unified)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 14 mesh non-manifold edge(s) \u2014 faces meet >2-ways (self-touch / coincident faces); a CAD 
+[   0s] chat: Same-domain unification also leaves the same 14 mesh self-touch edges. I’m inspecting just the defect neighborhood now so the repair can be a small targeted fill/cut instead of a broad remodel.
+[   0s] execute #6: from build123d import GeomType import math, json probe = Vector(-21.0, 64.9, 0.0) near = [
+[   0s]   <- {"content": [{"type": "text", "text": "{'idx': 24, 'type': 'GeomType.BSPLINE', 'center': (-21.252, 65.68, 4.728), 'area': 7.516, 'normal': (-0.9809, -0.0869, -0
+[   0s] . measure
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"volume\": 438355.7218,\n  \"area\": 111335.5824,\n  \"topology\": {\n    \"faces\": 212,\n    \"edges\": 532,\n   
+[   0s] chat: The broad geometry report shows the large wall holes are represented by cylindrical faces, with several hole axes along `X`, `Y`, and `Z`. I’m enumerating the cylindrical faces with centers, axes, and
+[   0s] execute #7: # Inspect cylindrical face APIs on one cylinder face cyl_faces = [f for f in part.faces() 
+[   0s]   <- {"content": [{"type": "text", "text": "cyl count 97\nsample idx 1\n['axis_of_rotation', 'center', 'center_location', 'combined_center', 'faces_intersected_by_ax
+[   0s] chat: The face API exposes `axis_of_rotation`, which is enough to classify drilled/cylindrical holes by axis. I’ll use that rather than visual guessing.
+[   0s] execute #8: rows=[] for i, f in enumerate(part.faces()):     if f.geom_type == GeomType.CYLINDER:     
+[   0s]   <- {"content": [{"type": "text", "text": "{'idx': 203, 'diam': 10.0, 'area': 49.2805, 'center': (-16.603, -33.438, -31.369), 'axis': (-1.0, 0.0, 0.0), 'axis_pos': 
+[   0s] chat: Candidate interpretation from the cylinder table: the -X wall has a large X-axis bore centered near `y=5, z=0`, and two tiny X-axis holes at `y≈27.0, z≈±46`. I’m checking the planar wall faces now to 
+[   0s] execute #9: planes=[] for i,f in enumerate(part.faces()):     if f.geom_type == GeomType.PLANE:       
+[   0s]   <- {"content": [{"type": "text", "text": "X-normal planar faces: 8\n{'idx': 35, 'center': (-89.27, 5.0, -0.0), 'normal': (-1.0, -0.0, -0.0), 'area': 12297.204}\n{'
+[   0s] chat: I have confirmed the two primary YZ-parallel walls: the -X wall spans roughly `x=-89.27..-79.27` and has the one large X-axis bore; the +X wall spans roughly `x=-20.85..-13.35` and carries the other p
+[   0s] execute #10: # Minimal healing trial: remove the self-touch cluster on the +X wall with a tiny local re
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'healed1': volume=4.384e+05 mm\u00b3, faces=217\nvol delta from part -5.429643 faces 217 edges 550\n--- curren
+[   0s] >> validate(healed1)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438350.2922,\n  \"watertight_manifold
+[   0s] chat: The tiny relief cut removed about `5.43 mm^3` and clears the validity gate. I’m saving that as the valid repaired baseline, then I’ll verify the two target holes on the -X wall before filling them.
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'valid_repaired_baseline' saved. Geometry captured: current_shape, part, baseline, unified, healed1."}], "struct
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 27, \"holes\": [{\"axis\": [0.0, -1.0, 0.0], \"location\": [57.6852, -55.0, 10.0], \"diameter\": 5.0, \"depth
+[   0s] chat: `find_holes` confirms the -X wall’s main bore/bolt-circle region, but the two requested holes are not returned as drilled-through holes; they show up as small cylindrical/rounded pocket features on th
+[   0s] execute #11: targets = [Vector(-84.27, 27.0, 46.0), Vector(-84.27, 27.0, -46.0)] for ti,t in enumerate(
+[   0s]   <- {"content": [{"type": "text", "text": "--- neighborhood 0 (-84.27, 27.0, 46.0)\n{'idx': 123, 'type': 'GeomType.CYLINDER', 'center': (-84.27, 26.801, 45.025), 'a
+[   0s] execute #12: test_cyl_x = Cylinder(1, 10).move(Location((0,0,0),(0,90,0))) show(test_cyl_x, "test_cyl_x
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'test_cyl_x': volume=31.42 mm\u00b3, faces=3\nbbox Vector: (X=10, Y=2, Z=2)\naxis 1.0 0.0 0.0 center Vector: (
+[   0s] chat: The two target holes are the diameter `2 mm` X-axis features at `y=27.023`, `z=+46` and `z=-46` on the `x=-89.27..-79.27` wall. I’m filling them with local plugs clipped to the wall slab and subtracti
+[   0s] execute #13: # Fill only the two +Y-side small holes on the -X wall. x_center = -84.2697 wall_thickness
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'target_hole_fill_patches': volume=403.5 mm\u00b3, faces=8\nRegistered 'edited1': volume=4.387e+05 mm\u00b3, f
+[   0s] >> validate(edited1)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438718.6743,\n  \"watertight_manifold
+[   0s] chat: The first fill pass is valid and adds material, so I’m writing `output.step` now as a checkpoint before refining the feature fidelity.
+[   0s] >> export(edited1)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/205_run/output.step\nvolume 4.387e+05 mm\
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'edited_valid_checkpoint_1' saved. Geometry captured: current_shape, part, baseline, unified, healed1, test_cyl_
+[   0s] chat: The boolean succeeded, but the fill volume is larger than a simple 2 mm through-hole pair, so I’m going to use shape comparison and local face checks to see whether the patch is too broad before accep
+[   0s] execute #14: original = import_step("input.step") show(original, "original") print('original reimported
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'original': volume=4.384e+05 mm\u00b3, faces=212\noriginal reimported 438355.715939 212\n--- current_shape (\"
+[   0s] chat: The reimported original is registered as `original`; I’m comparing it against the edited solid to localize every changed region.
+[   0s] . shape_compare
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"a\": {\n    \"name\": \"original\",\n    \"volume\": 438355.7159,\n    \"faces\": 212,\n    \"edges\": 554,\n    \
+[   0s] chat: The comparison shows the target is correct, but the patch radius is too broad: changed bboxes reach roughly a 3 mm radius around each hole. I’m reducing the fill patch to cover the 2 mm hole plus its 
+[   0s] execute #15: # Refinement: smaller patch radius, intended to fill the 2 mm hole plus the rounded rim on
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'target_hole_fill_patches_r205': volume=211.4 mm\u00b3, faces=8\nRegistered 'edited2': volume=4.385e+05 mm\u00
+[   0s] >> validate(edited2)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438548.2102,\n  \"watertight_manifold
+[   0s] chat: The reduced patch is valid and adds about `198 mm^3` over the healed baseline. I’m checking the local face inventory at the two target locations to confirm the original cylindrical hole faces are gone
+[   0s] execute #16: for name,obj in [('healed1', healed1), ('edited2', edited2)]:     print('===', name)     f
+[   0s]   <- {"content": [{"type": "text", "text": "=== healed1\ntarget 0 near faces 3\n{'idx': 123, 'type': 'GeomType.CYLINDER', 'center': (-84.27, 26.801, 45.025), 'area':
+[   0s] chat: The smaller plug removes the original 2 mm cylindrical faces, but it leaves a new arbitrary plug-radius cylindrical boundary, so it is not a clean “hole removed” surface. I’m going to inspect/try a fi
+[   0s] execute #17: print('=== edited1 target local face types') for ti,t in enumerate(targets):     neigh=[] 
+[   0s]   <- {"content": [{"type": "text", "text": "=== edited1 target local face types\ntarget 0\n{'idx': 125, 'type': 'GeomType.CYLINDER', 'center': (-84.27, 28.318, 48.70
+[   0s] chat: The remaining plug-radius faces may be residual partition faces from the fuse rather than visible exterior, so I’m applying same-domain cleanup to the edited solid and rechecking the target faces.
+[   0s] execute #18: usd2 = ShapeUpgrade_UnifySameDomain(edited2.wrapped, True, True, True) usd2.Build() edited
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited2_unified': volume=4.385e+05 mm\u00b3, faces=225\nedited2_unified vol 438548.210245 faces 225 edges 578
+[   0s] >> validate(edited2_unified)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438548.2102,\n  \"watertight_manifold
+[   0s] chat: I’m testing a rectangular local fill clipped by the main bore instead of a round plug. The goal is for the added material’s visible boundary to be the original wall planes/main bore only, with the pat
+[   0s] execute #19: # Alternative fill: local wall-volume boxes clipped by the main bore, so no arbitrary roun
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'target_hole_fill_box_patches': volume=653.5 mm\u00b3, faces=12\nRegistered 'edited_box': volume=4.389e+05 mm\
+[   0s] >> validate(edited_box)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438934.2769,\n  \"watertight_manifold
+[   0s] chat: The rectangular patch also passes validity, but it adds too much material, so it’s not a good refinement candidate. I’ll keep the previous valid checkpoint while I work toward a cleaner, smaller fill.
+[   0s] execute #20: for ti,t in enumerate(targets):     neigh=[]     for i,f in enumerate(edited_box.faces()):
+[   0s]   <- {"content": [{"type": "text", "text": "edited_box target 0\n{'idx': 176, 'type': 'GeomType.PLANE', 'center': (-84.27, 27.023, 49.5), 'area': 70.0, 'axis': None,
+[   0s] chat: The geometry suggests the named pair may be these 2 mm edge holes, but the rendered views are useful to check whether the visible requested holes disappear. I’m rendering the current refined candidate
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "text", "text": "[SEND: /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/205_run/renders/edited2_iso.svg]"}, {"type": "
+[   0s] chat: High-quality raster rendering exceeded the tessellation budget and fell back to an SVG projection. I’ll rasterize that SVG instead of re-running the heavy 3D render.
+[   0s] . render_drawing
+[   0s]   <- {"content": [{"type": "image", "data": "iVBORw0KGgoAAAANSUhEUgAABAAAAAOCCAYAAADpwqDeAANsuUlEQVR4nOz9CXck13Wti+7s0PcooFpWy15sRYqmjixdS7JlHb87xmt+0flPZ7zxrs47R762
+[   0s] chat: The SVG projection confirms the part is still coherent, but it is too wireframe-heavy to judge the small holes. I’m switching to exact local checks and one orthographic SVG view rather than more expen
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "text", "text": "Error executing tool render_view: ValueError: Unknown direction 'right'. Use: top, front, side, iso"}], "structured_conte
+[   0s] chat: The renderer uses `side` rather than `right` for that orthographic preset, so I’m rerunning that view with the supported name.
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "text", "text": "[SEND: /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/205_run/renders/edited2_side.svg]"}, {"type": 
+[   0s] . render_drawing
+[   0s]   <- {"content": [{"type": "image", "data": "iVBORw0KGgoAAAANSUhEUgAABAAAAAKlCAYAAABVHJ7kAAC9JUlEQVR4nOz9CYMk13XY+Z6IXGtfe0d3YydBEgRFUBQ5EkhJtC3ZnvHze9/ziR6NPSPZomQR
+[   0s] chat: I’m testing the exact cylinder-sized fill as a lower-bound candidate: it should remove only the 2 mm cylindrical voids and avoid the broad artificial patch, though it may leave the original rounded en
+[   0s] execute #21: patch_radius1 = 1.0 patches_r1 = None for zc in target_zs:     cyl = Cylinder(patch_radius
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'target_hole_fill_patches_r1': volume=62.83 mm\u00b3, faces=6\nRegistered 'edited_r1': volume=4.384e+05 mm\u00
+[   0s] chat: The radius-1 fill adds about `62.8 mm^3`, matching two 2 mm through cylinders across the 10 mm wall, so I’m validating it and checking whether the hole faces disappear without overfilling.
+[   0s] >> validate(edited_r1)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 1 non-manifold edge(s) \u2014 edges shared by 3+ faces; 2 mesh non-manifold edge(s) \u2014 fac
+[   0s] chat: The exact radius-1 fill is too tangential and produces a non-manifold/separate-body result. I’m increasing it slightly to overlap the surrounding material and make a proper fused fill, starting again 
+[   0s] execute #22: def make_hole_fill_candidate(r, name):     patches = None     for zc in target_zs:        
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_r12_patches': volume=86.92 mm\u00b3, faces=8\nRegistered 'edited_r12': volume=4.384e+05 mm\u00b3, face
+[   0s] >> validate(edited_r12)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438435.4601,\n  \"watertight_manifold
+[   0s] chat: A `1.2 mm` radius fill passes validation and adds `85.17 mm^3`, much closer to the actual small-hole volume. I’m checking whether it removes the target cylindrical holes while keeping the patch tight.
+[   0s] execute #23: for ti,t in enumerate(targets):     neigh=[]     for i,f in enumerate(edited_r12.faces()):
+[   0s]   <- {"content": [{"type": "text", "text": "edited_r12 target 0 near 7\n{'idx': 124, 'type': 'GeomType.CYLINDER', 'center': (-84.27, 27.541, 47.082), 'area': 56.6721
+[   0s] chat: The `1.2 mm` version is valid but still leaves a small patch boundary. I’m trying the smallest overlap that will fuse cleanly, to minimize any geometry beyond the requested hole fill.
+[   0s] execute #24: edited_r105, patches_r105 = make_hole_fill_candidate(1.05, 'edited_r105')
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_r105_patches': volume=68.85 mm\u00b3, faces=8\nRegistered 'edited_r105': volume=4.384e+05 mm\u00b3, fa
+[   0s] >> validate(edited_r105)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438418.7242,\n  \"watertight_manifold
+[   0s] chat: A `1.05 mm` fill also passes and is much tighter. I’m checking whether an even smaller overlap stays valid; if not, `1.05 mm` is the tight valid candidate.
+[   0s] execute #25: edited_r101, patches_r101 = make_hole_fill_candidate(1.01, 'edited_r101')
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_r101_patches': volume=64.06 mm\u00b3, faces=8\nRegistered 'edited_r101': volume=4.384e+05 mm\u00b3, fa
+[   0s] chat: The `1.01 mm` candidate has been built; I’m validating it now.
+[   0s] >> validate(edited_r101)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438414.2451,\n  \"watertight_manifold
+[   0s] chat: `1.01 mm` passes, adding only about `63.95 mm^3` over the healed baseline. I’m making one more near-exact trial at `1.001 mm` to avoid unnecessary overfill.
+[   0s] execute #26: edited_r1001, patches_r1001 = make_hole_fill_candidate(1.001, 'edited_r1001')
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_r1001_patches': volume=62.96 mm\u00b3, faces=9\nRegistered 'edited_r1001': volume=4.384e+05 mm\u00b3, 
+[   0s] chat: The near-exact `1.001 mm` version built successfully. I’m validating it; if it passes, that will be the least intrusive fill.
+[   0s] >> validate(edited_r1001)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438413.2102,\n  \"watertight_manifold
+[   0s] chat: The `1.001 mm` candidate passes and is effectively the exact 2 mm hole fill with only a 0.001 mm overlap for a clean fuse. I’m replacing `output.step` with this tighter valid result before running the
+[   0s] >> export(edited_r1001)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/205_run/output.step\nvolume 4.384e+05 mm\
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'edited_valid_checkpoint_final_candidate' saved. Geometry captured: current_shape, part, baseline, unified, heal
+[   0s] chat: The tight candidate is now on disk. I’m running the authoritative shape comparison against the original to confirm the changes are localized to the two target holes plus the tiny required validity rel
+[   0s] . shape_compare
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"a\": {\n    \"name\": \"original\",\n    \"volume\": 438355.7159,\n    \"faces\": 212,\n    \"edges\": 554,\n    \
+[   0s] chat: Against the raw input, shape comparison shows the intended two added target regions plus the tiny healing relief needed because the input itself failed validation. I’m also comparing against the valid
+[   0s] . shape_compare
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"a\": {\n    \"name\": \"healed1\",\n    \"volume\": 438350.2922,\n    \"faces\": 217,\n    \"edges\": 550,\n    \"
+[   0s] chat: The valid-baseline comparison reports only the two target fill regions and `unchanged_elsewhere=true`. I’m doing one last direct probe along the old hole axes to verify those passages are now solid ma
+[   0s] execute #27: # Direct probe: a radius-0.5 cylinder through each former hole should intersect no materia
+[   0s]   <- {"content": [{"type": "text", "text": "probe total volume 15.707963\nintersection original 0.0\nintersection healed baseline 0.0\nintersection edited_r1001 15.7
+[   0s] chat: The probe check is conclusive: both old axes were empty in the original/healed model and are fully solid in the edited model. I’m doing one final validate/export cycle on the exact object now.
+[   0s] >> validate(edited_r1001)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 438413.2102,\n  \"watertight_manifold
+[   0s] >> export(edited_r1001)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/205_run/output.step\nvolume 4.384e+05 mm\
+[   0s] chat: Done. `output.step` was written here:
+
+[output.step](/Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/205_run/output.step)
+
+Verification:
+- Imported `input.step`; raw input failed v
+[   0s] RESULT tokens in=4632558 out=26546

@@ -54,8 +54,20 @@ uv run --project /Users/paul/repos/cadgenbench python \
 ```
 
 The official `sanity_check_submission.py` ships in the HF dataset cache (the path above);
-the `cadgenbench` package is in `/Users/paul/repos/cadgenbench`. **Never upload a zip until
-every `output.step` passes this real check.**
+the `cadgenbench` package is in `/Users/paul/repos/cadgenbench`.
+
+**GOTCHA #2 (hit 2026-06-25, cadgenbench 0.2.0):** the workaround above **no longer runs locally**
+on this Mac. After `/Users/paul/repos/cadgenbench` was re-pointed to the official
+`huggingface/cadgenbench` (0.2.0), its deps include `open3d==0.19` (cp312-only wheels) and
+`nlopt==2.10` (no macOS-x86_64 wheel), so the uv env won't build — `uv run --project ...`
+fails with a "no wheel for the current platform" resolver error (not a geometry verdict).
+So the official gate **cannot be run locally under 0.2.0**. Fall back to:
+- the **build123d-mcp proxy gate** (what `package_submission.py` already runs) as the local
+  validity prediction — it shares the core BRepCheck + mesh-manifold logic, and
+- the **HF Space's own authoritative gate**, which runs at scoring time on Linux (where the
+  wheels exist). Treat proxy `81/81` as "expected valid"; the Space is the real verdict.
+
+Do not rabbit-hole trying to build open3d/nlopt from source locally — upload and let the Space gate.
 
 ## Verifying edits actually took (no-op detection)
 

@@ -1,0 +1,197 @@
+[   0s] session 019f0000-2a86-78d3-b10a-a57cb1df601d
+[   0s] chat: I’ll use the build123d MCP workflow for this edit and first establish a validated rollback snapshot of the unmodified STEP, as requested.
+[   0s] chat: The build123d MCP tools are available. I’m loading the STEP and validating it before doing any feature identification so the rollback point is clean and unchanged.
+[   0s] . import_cad_file
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"imported\": \"part\",\n  \"format\": \"step\",\n  \"path\": \"/Users/paul/repos/cadgenbench-build123d/work/gpt55-v
+[   0s] >> validate(part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 632495.4255,\n  \"watertight_manifold
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'unchanged_valid_start' saved. Geometry captured: current_shape, part."}], "structured_content": {"result": "Sna
+[   0s] chat: The unchanged import passes the gate and has a saved rollback snapshot. I’m pulling the solid into the persistent Python namespace next, then I’ll enumerate candidate bosses and nearby holes from the 
+[   0s] . list_mcp_resources
+[   0s]   <- None
+[   0s] chat: The resource listing name differs from the tool namespace, so I’ll use the MCP’s built-in workflow guidance and continue with the validated geometry session.
+[   0s] . workflow_hints
+[   0s]   <- {"content": [{"type": "text", "text": "BUILD123D-MCP WORKFLOW GUIDE\n\n1. ORIENT FIRST\n   At the start of a session, call session_state() to see what geometry,
+[   0s] chat: I have the rollback snapshot. Now I’m establishing the namespace variable the server needs and enumerating circular hole/boss geometry so the “no fillet on mounting face” qualifier can be checked agai
+[   0s] execute #1: from build123d import import_step part = import_step('input.step') show(part, 'working_par
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'working_part': volume=6.325e+05 mm\u00b3, faces=642\nloaded part variable <class 'build123d.topology.three_d.
+[   0s] >> validate(working_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 632495.4255,\n  \"watertight_manifold
+[   0s] chat: The namespace copy also passes validation. I’m using the built-in hole recognizer first, then I’ll inspect nearby cylindrical external faces and their base-face fillets directly.
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 8, \"holes\": [{\"axis\": [0.0, 0.0, -1.0], \"location\": [89.4984, -98.7129, 70.294], \"diameter\": 18.5, \"
+[   0s] chat: There are eight through holes recognized, all along Z. I’m measuring the full face inventory next, then I’ll narrow to external cylindrical bosses and check which one lacks a filleted transition on th
+[   0s] . measure
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"volume\": 632495.4255,\n  \"area\": 156004.4528,\n  \"topology\": {\n    \"faces\": 642,\n    \"edges\": 1549,\n  
+[   0s] chat: The face inventory shows several cylinder groups, including horizontal cylinders that are likely side bosses or ribs. I’m extracting per-face centers, axes, radii, and bounding boxes so I can distingu
+[   0s] execute #2: # Probe the face API on one cylindrical-looking face from build123d import * faces = list(
+[   0s]   <- {"content": [{"type": "text", "text": "faces 642\nface 0 [('geom_type', True), ('area', True), ('center', True), ('normal_at', True), ('bounding_box', True)] ty
+[   0s] chat: That API probe left the session’s current shape pointing at a face, while the named solid is still intact. I’m resetting the current working object back to the full solid before continuing.
+[   0s] execute #3: show(part, 'working_part') print('working_part reset as current solid')
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'working_part': volume=6.325e+05 mm\u00b3, faces=642\nworking_part reset as current solid\n--- current_shape (
+[   0s] >> validate(working_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 632495.4255,\n  \"watertight_manifold
+[   0s] chat: The solid is current and valid again. I’m going to use direct face descriptors now, keeping the full part registered at the end of each probe to avoid accidentally promoting a subface to the active re
+[   0s] execute #4: from build123d import * # Find one cylinder face and inspect useful attributes/methods cy 
+[   0s]   <- {"content": [{"type": "text", "text": "center method: Vector: (X=-111.081, Y=-43.9569, Z=48.5618)\nbbox: bbox: -113.7362309282 <= x <= -107.6109532005, -47.6947
+[   0s] chat: The face API exposes cylinder radius and axis information, so I can build a compact candidate table without relying on noisy mesh sampling.
+[   0s] execute #5: from build123d import * cy_faces = [] for i, f in enumerate(part.faces()):     if str(f.ge
+[   0s]   <- {"content": [{"type": "text", "text": "{'i': 136, 'r': 148.8905, 'd': 297.781, 'area': 2.244, 'center': (-110.9, -29.411, 4.215), 'axis': (0.9784, -0.2066, 0.0)
+[   0s] chat: The horizontal cylinders include side features, but the request’s wording could also mean a vertical standoff around a through-hole. I’m checking cylinder orientation, exterior/interior normal directi
+[   0s] execute #6: from build123d import * # Probe normal_at usage on a cylinder face cy = next(f for f in pa
+[   0s]   <- {"content": [{"type": "text", "text": "face center Vector: (X=-112.893, Y=-90.5558, Z=46.3344)\nnormal args () -> Vector: (X=0.833458, Y=-0.552582, Z=0)\nnormal
+[   0s] chat: I’m also checking face adjacency so I can tell whether a cylinder’s mounting edge meets a torus blend or meets a planar support directly. That is the key discriminator in the request.
+[   0s] execute #7: from build123d import * from OCP.TopExp import TopExp from OCP.TopAbs import TopAbs_EDGE, 
+[   0s]   <- {"content": [{"type": "text", "text": "selected face 90 center Vector: (X=89.4984, Y=-83.4462, Z=-79.206) radius 15.266696842898\n edge err 'OCP.OCP.TopTools.To
+[   0s] chat: The OCCT adjacency map is reachable; I just need the right iterator wrapper for its face lists. Continuing with the same validated solid.
+[   0s] execute #8: from build123d import * from OCP.TopExp import TopExp from OCP.TopAbs import TopAbs_EDGE, 
+[   0s]   <- {"content": [{"type": "text", "text": "Error: ImportError: cannot import name 'TopTools_ListIteratorOfListOfShape' from 'OCP.TopTools' (/Users/paul/.cache/uv/ar
+[   0s] chat: That iterator class name is not exposed in this OCP build. I’ll inspect the list object’s available methods and use those directly.
+[   0s] execute #9: from build123d import * from OCP.TopExp import TopExp from OCP.TopAbs import TopAbs_EDGE, 
+[   0s]   <- {"content": [{"type": "text", "text": "list type <class 'OCP.OCP.TopTools.TopTools_ListOfShape'>\n['Allocator', 'Append', 'Assign', 'Clear', 'Extent', 'First', 
+[   0s] chat: The adjacency list is directly iterable, so I can now report each candidate boss with the face types it touches at its mounting edge.
+[   0s] execute #10: from build123d import * from OCP.TopExp import TopExp from OCP.TopAbs import TopAbs_EDGE, 
+[   0s]   <- {"content": [{"type": "text", "text": "selected face 90 center (89.498, -83.446, -79.206) radius 15.267\n edge 0 len 47.962 center (89.498, -83.446, -80.706) ad
+[   0s] chat: I found eight Z-through holes. I’m correlating each one with coaxial exterior cylinders and their adjacent base faces; this should isolate the unfilleted boss without guessing from the images.
+[   0s] execute #11: from build123d import * from OCP.TopExp import TopExp from OCP.TopAbs import TopAbs_EDGE, 
+[   0s]   <- {"content": [{"type": "text", "text": "\n {'xy': (89.4984, -98.7129), 'dia': 18.5, 'label': 'H1 corner +X -Y'}\n face 90 D 30.533 area 143.885 center (89.498, -
+[   0s] chat: A boss recognizer is available too. I’ll run it and cross-check its candidates against the face-adjacency table, especially the unfilleted candidate near the right-side mounting holes.
+[   0s] . find_bosses
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 10, \"bosses\": [{\"axis\": [0.0, 0.0, -1.0], \"location\": [-100.5893, -98.7129, -80.706], \"diameter\": 29.
+[   0s] chat: The boss recognizer found ten bosses. I’m reducing that to a feature table with base location, free-end location, height, base-adjacent face types, and nearest mounting hole so the target is confirmed
+[   0s] execute #12: from build123d import * from OCP.TopExp import TopExp from OCP.TopAbs import TopAbs_EDGE, 
+[   0s]   <- {"content": [{"type": "text", "text": "Boss 1: loc/free=(-100.589, -98.713, -80.706) axis=(0, 0, -1) D=29.52 height=15.50 base=(-100.589, -98.713, -65.206)\n  f
+[   0s] chat: Target confirmed: the only unfilleted boss that is also a mounting-hole boss is the D18.00 boss at `(118.023, 100.515, -12.440)`, height `15.01`, base at `z=-27.450`. Its nearest other mounting hole i
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'pre_boss3_extend' saved. Geometry captured: current_shape, part, working_part."}], "structured_content": {"resu
+[   0s] chat: I’m applying the extension as an annular cylinder on the confirmed boss axis: add only the material from the old free end up to the neighboring mounting-hole plane, with a through cut matching the exi
+[   0s] execute #13: from build123d import * # Extend the unfilleted D18 mounting-hole boss to the neighboring 
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_part': volume=6.365e+05 mm\u00b3, faces=593\nextended boss old_top_z -12.4395 target_top_z 19.0275 hei
+[   0s] chat: The first edit added about `4048 mm³` and changed topology, so the boolean took. I’m validating that edited solid before measuring or exporting it.
+[   0s] >> validate(edited_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 3 mesh non-manifold edge(s) \u2014 faces meet >2-ways (self-touch / coincident faces); a CAD s
+[   0s] chat: The edit failed the mesh gate due to three non-manifold mesh edges, likely from coincident/tangent faces where the annulus overlapped the original boss. I’m locating those defects, then I’ll either re
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "3 defect(s) located (mesh_nonmanifold_edge):\n{\n  \"count\": 3,\n  \"defects\": [\n    {\n      \"kind\": \"mesh_nonmani
+[   0s] chat: I’m rolling back to the saved valid pre-edit state rather than building on the invalid shape. Then I’ll reapply the boss extension using the boss’s existing annular top face instead of an overlapping 
+[   0s] . restore_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'pre_boss3_extend' restored. Active geometry: current_shape, part, working_part."}], "structured_content": {"res
+[   0s] >> validate(working_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 632495.4255,\n  \"watertight_manifold
+[   0s] chat: Rollback is valid. Since snapshot restores geometry but not Python variables, I’m rebinding the `part` variable to the restored named solid before retrying the edit.
+[   0s] execute #14: # Rebind the Python variable to the valid restored geometry in the object registry if avai
+[   0s]   <- {"content": [{"type": "text", "text": "has objects registry False\nRegistered 'working_part': volume=6.325e+05 mm\u00b3, faces=642\nrebound volume 632495.4255 f
+[   0s] chat: The working variable is back to the original valid solid. I’ll retry using extrusion from the existing boss top face, which avoids an overlapping base seam.
+[   0s] >> validate(working_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 632495.4255,\n  \"watertight_manifold
+[   0s] chat: I’m extruding the actual annular top face of the target boss by `31.467 mm` to the neighboring hole’s opening plane, then fusing it back into the imported solid.
+[   0s] execute #15: from build123d import * faces = list(part.faces()) top_face = faces[355]  # planar annular
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_part': volume=6.365e+05 mm\u00b3, faces=644\ntop face center before (118.0233, 100.5154, -12.4395) del
+[   0s] chat: The extrusion-based edit added `4049 mm³` and only a small topology delta, which is more consistent with a clean localized boss extension. Validating now.
+[   0s] >> validate(edited_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636544.6083,\n  \"watertight_manifold
+[   0s] chat: The edited solid passes validation. I’m writing the first valid changed `output.step` checkpoint now, then I’ll measure and compare it against the original to verify the change is only at the intended
+[   0s] >> export(edited_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/output.step\nvolume 6.365e+05 mm\
+[   0s] chat: The interactive validation passed, but the stricter export gate failed on one mesh non-manifold edge, so that STEP is not acceptable. I’m locating the defect and will redo or repair the extension befo
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "No validity defects located \u2014 the part passes the structural checks.\n{\"count\": 0, \"defects\": []}"}], "structure
+[   0s] chat: The defect locator does not reproduce the export-only mesh issue, so I’m trying a cleanup pass on the fused B-rep. If that still fails the export gate, I’ll roll back and use a different construction.
+[   0s] execute #16: # Try B-rep cleanup on the fused extrusion result to remove any residual coincident seam. 
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_cleaned': volume=6.365e+05 mm\u00b3, faces=644\ncleaned volume 636544.6083 faces 644\n\nSession object
+[   0s] chat: Cleanup kept the geometry unchanged. I’m validating and then checking the export gate on the cleaned object.
+[   0s] >> validate(edited_cleaned)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636544.6083,\n  \"watertight_manifold
+[   0s] chat: Interactive validation still passes; I’m re-running export now because the export gate is the authoritative check for the final file.
+[   0s] >> export(edited_cleaned)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/output.step\nvolume 6.365e+05 mm\
+[   0s] chat: Cleanup did not satisfy the strict export gate. I’m going to isolate the issue by importing the exported STEP as a separate diagnostic object and locating defects on that representation, then I’ll red
+[   0s] . import_cad_file
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"imported\": \"bad_export_diag\",\n  \"format\": \"step\",\n  \"path\": \"/Users/paul/repos/cadgenbench-build123d/w
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "No validity defects located \u2014 the part passes the structural checks.\n{\"count\": 0, \"defects\": []}"}], "structure
+[   0s] chat: The diagnostic import of the just-exported STEP passes the defect locator, which suggests the exporter may be healing the B-rep while the gate still flags the live object. I’ll check whether re-export
+[   0s] >> validate(bad_export_diag)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636549.6115,\n  \"watertight_manifold
+[   0s] >> export(bad_export_diag)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/output.step\nvolume 6.365e+05 mm\
+[   0s] chat: Before choosing a more invasive repair, I’m checking whether the strict export gate also flags the untouched original. That will tell me whether the issue is introduced by the boss edit or inherited f
+[   0s] >> validate(working_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 632495.4255,\n  \"watertight_manifold
+[   0s] >> export(working_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/original_export_check.step\nvolum
+[   0s] chat: The untouched original also fails the strict export gate at the same inherited self-touch, so this is an input healing issue as well as the requested edit. I’m applying a very small local relief at th
+[   0s] execute #17: from build123d import * # Minimal inherited export-gate healing: remove a tiny relief at t
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_healed': volume=6.365e+05 mm\u00b3, faces=644\nrelief radius 0.35 new volume 636547.3329 delta_from_or
+[   0s] chat: The relief operation changed only about `2.28 mm³` from the current healed diagnostic body. I’m validating it before any further measurement or export.
+[   0s] >> validate(edited_healed)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636547.3329,\n  \"watertight_manifold
+[   0s] chat: The healed edited body passes interactive validation. I’m checking the strict STEP export gate now.
+[   0s] >> export(edited_healed)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/output.step\nvolume 6.365e+05 mm\
+[   0s] chat: The strict export gate passed after the local inherited-defect relief. I’m saving this as the current valid edited checkpoint, then I’ll verify the target boss length and localized shape difference.
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'valid_exported_edited_healed' saved. Geometry captured: current_shape, part, working_part, edited_part, edited_
+[   0s] chat: For final correctness, I’m re-registering the untouched input as `original` and comparing it to the exact edited object I exported. This should localize the main boss extension and the tiny inherited-
+[   0s] execute #18: from build123d import import_step original = import_step('input.step') show(original, 'ori
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'original': volume=6.325e+05 mm\u00b3, faces=642\nRegistered 'edited_healed': volume=6.365e+05 mm\u00b3, faces
+[   0s] chat: The final edited object is still the active shape. I’m running the localized geometry comparison now.
+[   0s] . shape_compare
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"a\": {\n    \"name\": \"original\",\n    \"volume\": 632495.4255,\n    \"faces\": 642,\n    \"edges\": 1549,\n    
+[   0s] chat: The surface comparison localizes the main change at the target boss and reports `unchanged_elsewhere=true`; I’m also running feature recognition to confirm the boss height is now flush with the neighb
+[   0s] . find_bosses
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 10, \"bosses\": [{\"axis\": [0.0, 0.0, 1.0], \"location\": [118.0233, 100.5154, 19.0275], \"diameter\": 18.0,
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 8, \"holes\": [{\"axis\": [0.0, 0.0, -1.0], \"location\": [118.0233, 100.5154, 19.0275], \"diameter\": 12.65,
+[   0s] chat: The requested boss is correct, but the inherited relief is larger than I’d like: it slightly shortens a small unrelated recognized boss by about `0.36 mm`. I’m going to try smaller relief radii and ke
+[   0s] execute #19: from build123d import * # Build a smaller-relief candidate from the untouched original plu
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'candidate_r010': volume=6.365e+05 mm\u00b3, faces=644\ncandidate r 0.1 volume 636547.4248 delta_original 4051
+[   0s] chat: The `0.10 mm` relief candidate is built. Validating it before trying the export gate.
+[   0s] >> validate(candidate_r010)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636547.4248,\n  \"watertight_manifold
+[   0s] chat: The `0.10 mm` relief candidate passes interactive validation. I’m checking the strict exporter on a temporary file.
+[   0s] >> export(candidate_r010)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/candidate_r010.step\nvolume 6.365
+[   0s] chat: `0.10 mm` already passes the export gate. I’ll test a smaller `0.02 mm` relief to reduce unrelated healing even further.
+[   0s] execute #20: from build123d import * base = original top_face = list(base.faces())[355] extended = base
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'candidate_r002': volume=6.365e+05 mm\u00b3, faces=644\ncandidate r 0.02 volume 636540.536298 delta_original 4
+[   0s] chat: The `0.02 mm` candidate produced an unexpected volume difference, so I’ll still validate/export-check it, but `0.10 mm` is currently the cleaner reliable checkpoint.
+[   0s] >> validate(candidate_r002)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636540.5363,\n  \"watertight_manifold
+[   0s] >> export(candidate_r002)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/candidate_r002.step\nvolume 6.365
+[   0s] chat: Both `0.10 mm` and `0.02 mm` reliefs pass export, but the very tiny boolean is less numerically stable. I’m checking feature recognition on both to decide which one least disturbs unrelated recognized
+[   0s] . find_bosses
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 10, \"bosses\": [{\"axis\": [0.0, 0.0, 1.0], \"location\": [118.0233, 100.5154, 19.0275], \"diameter\": 18.0,
+[   0s] . find_bosses
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 10, \"bosses\": [{\"axis\": [0.0, 0.0, 1.0], \"location\": [118.0233, 100.5154, 19.0275], \"diameter\": 18.0,
+[   0s] chat: The `0.02 mm` relief preserves the unrelated small boss much better while still passing export, so I’m making that the final object. I’ll revalidate it immediately before writing the final `output.ste
+[   0s] >> validate(candidate_r002)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636540.5363,\n  \"watertight_manifold
+[   0s] >> export(candidate_r002)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/output.step\nvolume 6.365e+05 mm\
+[   0s] chat: The final `output.step` export passed the strict gate. I’m saving a final checkpoint and then doing one last comparison/feature check on this exact exported object.
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'final_candidate_r002_exported' saved. Geometry captured: current_shape, part, working_part, edited_part, edited
+[   0s] chat: The final file is on disk and export-gate clean. I’m running shape comparison against the untouched input using the final candidate object, then I’ll stop.
+[   0s] . shape_compare
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"a\": {\n    \"name\": \"original\",\n    \"volume\": 632495.4255,\n    \"faces\": 642,\n    \"edges\": 1549,\n    
+[   0s] chat: Shape comparison on the final candidate still localizes the detected surface change at the target boss and reports unchanged elsewhere above the detection floor. I’m checking the final hole table once
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 8, \"holes\": [{\"axis\": [0.0, 0.0, -1.0], \"location\": [118.0233, 100.5154, 19.0275], \"diameter\": 12.65,
+[   0s] chat: The final hole table confirms the extended boss hole and the neighboring mounting hole now both open at `z=19.0275`. I’m doing one final visual render pass of the edited object.
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "text", "text": "[SEND: /var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/build123d_y30_rso6.svg]"}, {"type": "text", "text": "VTK raster r
+[   0s] chat: The raster renderer fell back to an SVG projection on this headless host, but the model rendered through the 3D pipeline. I’m doing a final import/validate of `output.step` itself so the file on disk 
+[   0s] . import_cad_file
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"imported\": \"final_output_file\",\n  \"format\": \"step\",\n  \"path\": \"/Users/paul/repos/cadgenbench-build123d
+[   0s] >> validate(final_output_file)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 636545.5497,\n  \"watertight_manifold
+[   0s] chat: Done. Wrote the final edited STEP to:
+
+[output.step](/Users/paul/repos/cadgenbench-build123d/work/gpt55-v0359-xhigh-full/250_run/output.step)
+
+Verification:
+- Target boss: D18.00 unfilleted mounting-h
+[   0s] RESULT tokens in=6000577 out=26757

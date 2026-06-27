@@ -35,6 +35,23 @@ esac
 command -v codex >/dev/null || { echo "ERROR: 'codex' (Codex CLI) not on PATH"; exit 1; }
 command -v uvx   >/dev/null || { echo "ERROR: 'uvx' not on PATH"; exit 1; }
 
+# --- Run isolation: execute in a scratch dir OUTSIDE the repo, mirror artifacts back. ---
+# The agent is handed its CWD (--cd) and the $OUT path inside the prompt. When those sit
+# under the repo, a full-bypass agent can walk up to the repo root and read PRIOR sweeps'
+# logs/ and work/ for the SAME fixture id — laundering an earlier run's (often wrong)
+# answer and silently breaking run independence (observed on fixture 241, which lifted a
+# previous run's parameters and reported them as "confirmed"). Running in a repo-external
+# temp dir removes that breadcrumb. We just repoint WORK at the scratch dir: every body
+# reference (inputs, prompt.txt, $OUT, stream.jsonl) then lands there, and the EXIT trap
+# copies the artifacts back into the real work dir so run_sweep.sh is unchanged. (This is
+# not a hard OS sandbox — full bypass is kept for MCP/uvx friction — but it closes the
+# only path the agent actually used to reach prior runs.)
+REAL_WORK="$WORK"
+mkdir -p "$REAL_WORK"
+REAL_WORK="$(cd "$REAL_WORK" && pwd)"   # absolute: the run cd's into the sandbox, so the trap needs a fixed path
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/cgb_fixture.XXXXXX")"
+trap 'cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true; rm -rf "$WORK"' EXIT
+
 mkdir -p "$WORK"
 rm -f "$WORK/output.step" "$WORK/stream.jsonl" "$WORK/filtered.log"
 cp "$FIX"/input.png  "$WORK"/ 2>/dev/null || true

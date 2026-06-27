@@ -24,6 +24,19 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 command -v claude >/dev/null || { echo "ERROR: 'claude' (Claude Code) not on PATH"; exit 1; }
 command -v uvx    >/dev/null || { echo "ERROR: 'uvx' not on PATH"; exit 1; }
 
+# --- Run isolation: execute in a scratch dir OUTSIDE the repo, mirror artifacts back. ---
+# The agent runs with CWD=$WORK and is given the $OUT path in its prompt. When those sit
+# under the repo, a permission-skipping agent can read PRIOR sweeps' logs/ and work/ for
+# the SAME fixture id via Bash — laundering an earlier run's answer and breaking run
+# independence. Repointing WORK at a repo-external temp dir removes that breadcrumb; the
+# EXIT trap mirrors output.step/stream.jsonl/filtered.log/etc. back into the real work dir
+# so run_sweep.sh is unchanged. (Same fix as run_fixture_codex.sh.)
+REAL_WORK="$WORK"
+mkdir -p "$REAL_WORK"
+REAL_WORK="$(cd "$REAL_WORK" && pwd)"   # absolute: the run cd's into the sandbox, so the trap needs a fixed path
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/cgb_fixture.XXXXXX")"
+trap 'cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true; rm -rf "$WORK"' EXIT
+
 mkdir -p "$WORK"
 rm -f "$WORK/output.step" "$WORK/stream.jsonl" "$WORK/filtered.log"
 cp "$FIX"/input.png  "$WORK"/ 2>/dev/null || true

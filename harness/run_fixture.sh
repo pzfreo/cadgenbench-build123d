@@ -85,10 +85,13 @@ cd "$WORK"
 
 # Allowed toolset. Base set (both tasks) plus session_state/last_error/resolve —
 # recovery + debug + selector tools the agent demonstrably reached for in the
-# opus48 sweeps. shape_compare is editing-only (verify the edit changed only what
-# was asked). load_part/search_library (no library), the 2D-drawing-authoring
-# tools, reset, and diagnostics are intentionally excluded as irrelevant here.
-ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve"
+# opus48 sweeps. locate_gate_defects (mcp >= 0.3.58) returns the 3D coordinates +
+# B-rep identity of a validity-gate failure so the agent repairs the exact spot
+# instead of blind (the codex path already sees it; the Claude allowlist lacked
+# it). shape_compare is editing-only (verify the edit changed only what was
+# asked). load_part/search_library (no library), the 2D-drawing-authoring tools,
+# reset, and diagnostics are intentionally excluded as irrelevant here.
+ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects"
 if [[ "$TASK" == "editing" ]]; then
   ALLOWED="$ALLOWED,mcp__build123d__shape_compare"
 fi

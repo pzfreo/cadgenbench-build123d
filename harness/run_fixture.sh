@@ -19,6 +19,17 @@ FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
 MODEL="${3:-claude-opus-4-8}"
 MCP_SPEC="${4:-build123d-mcp@latest}"
+
+# Optional reasoning-effort suffix on the model id: "claude-fable-5:xhigh" ->
+# model "claude-fable-5" + --effort xhigh (levels: low|medium|high|xhigh|max).
+# No suffix => Claude Code's default effort. Mirrors run_fixture_codex.sh so
+# effort is a launch-time, provenance-stamped part of the scored system.
+MODEL_EFFORT=""
+case "$MODEL" in
+  *:*) MODEL_EFFORT="${MODEL##*:}"; MODEL="${MODEL%%:*}" ;;
+esac
+EFFORT_ARG=()
+[[ -n "$MODEL_EFFORT" ]] && EFFORT_ARG=(--effort "$MODEL_EFFORT")
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 command -v claude >/dev/null || { echo "ERROR: 'claude' (Claude Code) not on PATH"; exit 1; }
@@ -66,7 +77,7 @@ JSON
 
 echo "fixture: $FIX  ($TASK)"
 echo "work:    $WORK"
-echo "model:   $MODEL    mcp: $MCP_SPEC  (--no-sandbox)"
+echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<default>}    mcp: $MCP_SPEC  (--no-sandbox)"
 echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter.py $WORK"
 echo "running claude -p ..."
 
@@ -89,6 +100,7 @@ fi
 export ENABLE_TOOL_SEARCH=false
 claude -p "$(cat prompt.txt)" \
   --model "$MODEL" \
+  ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
   --output-format stream-json --verbose \
   --mcp-config mcp_config.json \
   --strict-mcp-config \

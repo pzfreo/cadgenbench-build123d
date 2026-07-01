@@ -28,6 +28,8 @@ run_meta later; don't do that.
 - `gpt-5.5:medium` — the `:effort` suffix is part of the scored system; `run_sweep.sh`
   splits it into `model` + `reasoning_effort` in run_meta. `claude-*` models route to
   `run_fixture.sh`, everything else to `run_fixture_codex.sh` (needs `codex` logged in).
+  The `:effort` suffix works for `claude-*` too (e.g. `claude-fable-5:xhigh`) — the Claude
+  driver passes it as `claude --effort <low|medium|high|xhigh|max>`; no suffix = default effort.
 
 ## Package + authoritative validity check
 

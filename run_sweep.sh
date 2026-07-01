@@ -77,7 +77,6 @@ JOBS="${5:-4}"
 REASONING_EFFORT="config-default"
 MODEL_ID="$MODEL"
 case "$MODEL" in
-  claude*|"") : ;;
   *:*) REASONING_EFFORT="${MODEL##*:}"; MODEL_ID="${MODEL%%:*}" ;;
 esac
 

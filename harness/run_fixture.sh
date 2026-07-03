@@ -91,7 +91,7 @@ cd "$WORK"
 # it). shape_compare is editing-only (verify the edit changed only what was
 # asked). load_part/search_library (no library), the 2D-drawing-authoring tools,
 # reset, and diagnostics are intentionally excluded as irrelevant here.
-ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects"
+ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects,mcp__build123d__verify_spec,mcp__build123d__suggest_spec"
 if [[ "$TASK" == "editing" ]]; then
   ALLOWED="$ALLOWED,mcp__build123d__shape_compare"
 fi

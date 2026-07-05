@@ -28,7 +28,7 @@ CANDIDATE_NAMES = ("output.step", "output.stp", "output.stl", "output.obj", "out
 def proxy_gate(step_path):
     """Run the build123d-mcp validity gate on a STEP/STL and return its report."""
     from build123d import import_step
-    from build123d_mcp.tools.validate import _gate_report
+    from build123d_mcp.tools.validate import _gate_report, _run_mesh_gate_subprocess
 
     shp = import_step(str(step_path))
     solids = shp.solids()
@@ -40,11 +40,24 @@ def proxy_gate(step_path):
         from build123d import Compound
 
         shape = Compound(children=list(solids))
-    # exact=True: packaging is a deliberate one-off, so use the authoritative
-    # topology-stitch mesh gate. The default (inline budget) falls back to the
-    # fast coordinate-weld check on large parts, which false-flags valid solids
-    # (a packaged big editing fixture would be wrongly marked FAIL).
-    return _gate_report(shape, exact=True)
+    # exact=True alone is not enough on a large part: _gate_report's in-process
+    # exact check shares interactive validate()'s 35s wall-clock budget, and on
+    # a big/slow-to-stitch solid it silently falls back to the fast coordinate-
+    # weld check — which cannot detect open edges at all (hardcoded to 0), only
+    # non-manifold ones. That let a submission with 6 real mesh open edges
+    # proxy-PASS locally while both the agent's own export() (which runs this
+    # same check out-of-process, unbounded by the 35s budget) and the real
+    # CADGenBench gate correctly failed it. Packaging is a one-off with no live
+    # session to protect, so run the exact check out-of-process ourselves, the
+    # same way export() does, with a generous timeout instead of that budget.
+    mesh_override = None
+    if str(step_path).lower().endswith((".step", ".stp")):
+        mesh_override = _run_mesh_gate_subprocess(str(step_path), timeout=180)
+    return _gate_report(
+        shape,
+        exact=True,
+        mesh_override=mesh_override if mesh_override is not None else (0, 0, 0, 0, False),
+    )
 
 
 def build_submission_zip(root, manifest, full_set_path, submitter, name):
@@ -196,6 +209,8 @@ def main():
                 rep = proxy_gate(step)
                 entry["proxy_status"] = "PASS" if rep["passes_gate"] else "FAIL"
                 entry["proxy_reasons"] = rep.get("reasons", [])
+                entry["proxy_mesh_check"] = rep.get("mesh_check")
+                entry["proxy_warnings"] = rep.get("warnings", [])
                 if rep["passes_gate"]:
                     n_valid += 1
             except Exception as exc:  # noqa: BLE001 - record and continue

@@ -105,6 +105,10 @@ uvx --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
 # AST-check friction. MCP wiring is via -c TOML overrides (Codex has no
 # --mcp-config flag). --json emits the JSONL event stream; full bypass +
 # skip-git-repo-check make it run unattended in a non-repo work dir.
+# --disable-tool-groups drawing drops the 6-tool 2D drawing-authoring suite
+# (irrelevant here, pure schema-context overhead) — since Codex has no allowlist
+# to hide them client-side, this server-side flag is the ONLY way to keep them
+# out of a codex-driven run. Requires build123d-mcp >= 0.3.68.
 codex exec \
   --model "$MODEL" \
   ${MODEL_EFFORT:+-c model_reasoning_effort="$MODEL_EFFORT"} \
@@ -113,7 +117,7 @@ codex exec \
   --dangerously-bypass-approvals-and-sandbox \
   --json \
   -c 'mcp_servers.build123d.command="uvx"' \
-  -c "mcp_servers.build123d.args=[\"--python\",\"3.12\",\"$MCP_SPEC\",\"--no-sandbox\"]" \
+  -c "mcp_servers.build123d.args=[\"--python\",\"3.12\",\"$MCP_SPEC\",\"--no-sandbox\",\"--disable-tool-groups\",\"drawing\"]" \
   -c 'mcp_servers.build123d.startup_timeout_sec=120' \
   -c 'mcp_servers.build123d.tool_timeout_sec=600' \
   "${IMG_ARGS[@]+"${IMG_ARGS[@]}"}" \

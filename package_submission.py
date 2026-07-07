@@ -56,7 +56,7 @@ def proxy_gate(step_path):
     return _gate_report(
         shape,
         exact=True,
-        mesh_override=mesh_override if mesh_override is not None else (0, 0, 0, 0, False),
+        mesh_override=mesh_override if mesh_override is not None else (0, 0, 0, 0, 0, False),
     )
 
 

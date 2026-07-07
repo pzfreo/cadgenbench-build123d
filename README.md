@@ -9,14 +9,19 @@ scored behind a hard validity gate. This repo drives an agent to produce those
 STEPs, collects them into the submission layout, and validity-checks them before
 you upload.
 
+This file is the source of truth for the pipeline. If you're an AI agent working
+in this repo, also read `CLAUDE.md` — it layers behavioral rules and hard-won
+gotchas on top of what's documented here; it should never contradict this file.
+
 ## What the system is (and what's measured)
 
 The benchmark scores a **system**, not a bare model. Here the system is:
 
-> **Claude (Opus 4.8) + build123d-mcp + the generic prompts in `harness/`.**
+> **Claude (or Codex/GPT-5.5) + build123d-mcp (a pinned version) + the generic
+> prompts in `harness/`.**
 
 That whole pipeline is the contribution. When you publish a result, disclose all
-three parts.
+three parts, including the exact `build123d-mcp` version.
 
 ## Honest-use rules (read before reporting a number)
 
@@ -34,27 +39,54 @@ on the right side of the line:
 
 ## Prerequisites
 
-- `claude` (Claude Code), `uvx`, and `uv` on `PATH`.
-- The run installs `build123d-mcp@latest` from PyPI by default. To test an
-  unreleased build, pass a spec as the 4th arg (see below).
+- `claude` (Claude Code), `uvx`, and `uv` on `PATH`. For the Codex/GPT-5.5 path,
+  a logged-in `codex` CLI (`codex login`) too.
 
 ## Run a sweep
 
 ```bash
+./run_sweep.sh <fixtures_file> <run_name> [model] [mcp_spec] [jobs] [exec_timeout]
+
 # one fixture id per line; work/ and results/ are created per run name
-./run_sweep.sh splits/test.txt opus48-v1
+./run_sweep.sh splits/test.txt opus48-v1 claude-opus-4-8 build123d-mcp==0.3.72 5 240
 ```
 
-Each fixture is fetched, run through `harness/run_fixture.sh` (generation or
-editing is auto-detected from the fixture's files), and the result copied to
-`results/opus48-v1/<id>/output.step`. Per-fixture failures don't abort the sweep.
+`model` defaults to `claude-opus-4-8` (`claude-*` routes to Claude Code; any
+other id, e.g. `gpt-5.5`, routes to the Codex CLI driver — see below). `mcp_spec`
+defaults to `build123d-mcp@latest` (unpinned). `jobs` (fixtures run concurrently;
+each has its own work dir, so parallel runs never collide) defaults to `4` —
+lower it if you hit API rate limits (429s). `exec_timeout` (seconds, passed to
+both drivers as `--exec-timeout`) defaults to each server's own default
+(currently 120s); Codex's own client-side `tool_timeout_sec` is fixed at 600s in
+`run_fixture_codex.sh`, so keep this under that or Codex gives up first. Each
+fixture is fetched, run through `harness/run_fixture.sh` (generation or editing
+is auto-detected from the fixture's files), and the result copied to
+`results/<run_name>/<id>/output.step`. Per-fixture failures don't abort the sweep.
 
-Test an unreleased build123d-mcp (e.g. local `main`):
+**Pin `mcp_spec` to an exact version** (`build123d-mcp==0.3.72`) for any run you
+intend to report or compare against another run — the unpinned default is only
+for quick, throwaway exploration. A moving spec breaks reproducibility: two runs
+of "the same" sweep can silently use different build123d-mcp code.
+
+Test an unreleased build (e.g. a local branch or `main`):
 
 ```bash
 ./run_sweep.sh splits/test.txt opus48-main \
-    claude-opus-4-8 "build123d-mcp @ file:///path/to/build123d-mcp"
+    claude-opus-4-8 "build123d-mcp @ file:///path/to/build123d-mcp" 5
 ```
+
+**Commit prompt/harness changes before the sweep.** The sweep auto-generates
+`results/<run_name>/run_meta.json` (model, resolved `reasoning_effort`, the
+pinned `mcp_spec`, and the exact git commit of this repo) — the provenance
+`package_submission.py` later consumes to stamp the submission's `meta.json`. If
+the working tree is dirty at sweep time, `run_meta.json` records `git_dirty:
+true` and a `uncommitted.patch` is saved alongside it, but a clean commit is what
+makes a run's provenance actually reproducible — don't leave it to the patch file.
+
+Never drive fixtures with a hand-rolled loop over `run_fixture*.sh` directly — it
+writes `work/<id>_run/` with **no** `run_meta.json` and forces manual staging and
+a hand-authored `run_meta` later, which is error-prone and easy to get wrong.
+Always go through `run_sweep.sh`.
 
 Watch one fixture live (in another terminal):
 
@@ -71,23 +103,24 @@ Code, against the *same* build123d-mcp and the *same* generic prompts — a seco
 `claude-*` routes to Claude Code, anything else routes to the Codex driver.
 
 ```bash
-# logged-in `codex` CLI required (codex login); uvx + uv as before
-./run_sweep.sh splits/test.txt gpt55-v1 gpt-5.5
+./run_sweep.sh splits/test.txt gpt55-v1 gpt-5.5 build123d-mcp==0.3.72 5
 ```
 
 **Reasoning effort** is part of the scored system, so pin it explicitly with a
 `model:effort` suffix instead of letting it inherit `~/.codex/config.toml`:
 
 ```bash
-./run_sweep.sh splits/test.txt gpt55-hi gpt-5.5:high   # -c model_reasoning_effort=high
-./run_sweep.sh splits/test.txt gpt55-lo gpt-5.5:low
-./run_sweep.sh splits/test.txt gpt55-md gpt-5.5        # no suffix -> config default
+./run_sweep.sh splits/test.txt gpt55-hi gpt-5.5:high build123d-mcp==0.3.72 5   # -c model_reasoning_effort=high
+./run_sweep.sh splits/test.txt gpt55-lo gpt-5.5:low  build123d-mcp==0.3.72 5
+./run_sweep.sh splits/test.txt gpt55-md gpt-5.5      build123d-mcp==0.3.72 5   # no suffix -> config default
 ```
 
 The driver splits the suffix off (`-m gpt-5.5 -c model_reasoning_effort=high`),
 and `run_meta.json` records `model` + `reasoning_effort` so the run is fully
 pinned (the packaged `meta.json` notes disclose the effort too). `claude-*`
-models ignore the suffix.
+models route to Claude Code's own `--effort <low|medium|high|xhigh|max>` flag
+via the same `:effort` suffix (e.g. `claude-fable-5:xhigh`); no suffix means
+default effort.
 
 Each fixture runs through `harness/run_fixture_codex.sh`, which mirrors the Claude
 driver: it builds the identical prompt, attaches the drawing/renders to the model
@@ -110,9 +143,8 @@ than Claude Code's `Read` + `Bash`-crop. The prompts themselves are unchanged.
 ## Validate / package the submission
 
 ```bash
-uv run --python 3.12 --with build123d-mcp --with trimesh --with scipy \
-    python package_submission.py results/opus48-v1 --zip \
-    --official-sanity-check /path/to/cadgenbench/sanity_check_submission.py
+uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
+    python package_submission.py results/opus48-v1 --zip --name "<submission-name>"
 ```
 
 This writes `results/opus48-v1/manifest.json` (present / missing / gate verdict
@@ -124,10 +156,27 @@ commit's permalink, and `submitter_name`/`submission_name` = `pzfreo` (override
 with `--submitter` / `--name`). The validity gate runs `exact=True` so large
 parts aren't false-flagged.
 
-The **build123d-mcp gate is only a proxy** — the authoritative gate is
-CADGenBench's own `sanity_check_submission.py`; always run it (via
-`--official-sanity-check`) before uploading `submit/opus48-v1.zip` on the
-[leaderboard Space](https://huggingface.co/spaces/HuggingAI4Engineering/CADGenBench).
+### The build123d-mcp gate is a proxy, not the authoritative gate
+
+CADGenBench's own `sanity_check_submission.py` is authoritative, but **running it
+locally does not currently work on this machine** (cadgenbench 0.2.0's deps —
+`open3d==0.19`, `nlopt==2.10` — have no macOS-x86_64 wheels, so the required
+`uv --project` env fails to build). `package_submission.py --official-sanity-check
+<path>` exists but is **not usable here** for the same reason (and separately, it
+runs the checker under the packager's own ephemeral env, which lacks the
+`cadgenbench` package entirely — either way you'd get a `ModuleNotFoundError`
+traceback per fixture, not a geometry verdict). Do not pass
+`--official-sanity-check` on this machine; do not try to build open3d/nlopt from
+source to work around it.
+
+Instead:
+- Trust the **build123d-mcp proxy gate** (what `package_submission.py` already
+  runs, no flag needed) as the local validity prediction — it shares the core
+  BRepCheck + mesh-manifold logic with the real checker.
+- The **HF Space's own gate**, which runs at scoring time on Linux (where the
+  wheels exist), is the real, authoritative verdict. Treat a local `81/81` proxy
+  pass as "expected valid," not as a substitute for uploading and checking the
+  Space's result.
 
 ## Layout
 
@@ -144,7 +193,15 @@ harness/
 run_sweep.sh              batch a fixture list into results/<run>/<id>/output.step
 package_submission.py     validity-check the layout + write manifest.json
 splits/                   dev (tuned-on) vs test (reportable) fixture lists
+logs/                     per-fixture session logs — committed (see below)
+work/, results/, submit/  sweep artifacts — gitignored, regenerable from a rerun
 ```
+
+`logs/<run_name>/<id>.log` is intentionally **committed**, unlike `work/`,
+`results/`, and `submit/` (all gitignored as large and regenerable). A
+submission's `agent_url` points reviewers at the exact commit; the logs let them
+also see the actual session that produced a given `output.step`, for HF audit
+purposes. Never gitignore `logs/`.
 
 ## Scoring caveat
 

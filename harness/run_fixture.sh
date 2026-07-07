@@ -3,12 +3,13 @@
 # with a live JSON stream you can tail. Portable: no hardcoded machine paths.
 #
 # Usage:
-#   eval/run_fixture.sh <fixture_input_dir> <work_dir> [model] [mcp_spec]
+#   eval/run_fixture.sh <fixture_input_dir> <work_dir> [model] [mcp_spec] [exec_timeout]
 #
 #   fixture_input_dir : holds input.png (generation) and optionally input.step (editing)
 #   work_dir          : output.step + stream.jsonl + filtered.log land here
 #   model             : claude model id (default: claude-opus-4-8)
 #   mcp_spec          : build123d-mcp version spec for uvx (default: build123d-mcp@latest)
+#   exec_timeout      : seconds, passed as --exec-timeout (default: server's own, 120s)
 #
 # Live log (in another terminal):
 #   tail -n0 -f <work_dir>/stream.jsonl | python3 eval/stream_filter.py <work_dir>
@@ -19,6 +20,7 @@ FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
 MODEL="${3:-claude-opus-4-8}"
 MCP_SPEC="${4:-build123d-mcp@latest}"
+EXEC_TIMEOUT="${5:-}"
 
 # Optional reasoning-effort suffix on the model id: "claude-fable-5:xhigh" ->
 # model "claude-fable-5" + --effort xhigh (levels: low|medium|high|xhigh|max).
@@ -75,13 +77,22 @@ fi
 # lint_drawing, render_drawing, view_axes, save_drawing_annotations,
 # suggest_view_layout) — irrelevant to this pipeline (no drawing-authoring task)
 # and pure schema-context overhead otherwise. Requires build123d-mcp >= 0.3.68.
+# EXEC_TIMEOUT (optional) raises the default 120s execute() timeout — field
+# evidence (fixtures 202/240) shows heavy sew/defeature/boolean repairs on
+# large imports genuinely need more wall-clock time, and the replay-recovery
+# safety net (#361) has its own budget, so avoiding the timeout beats recovering
+# from it. Kept comfortably under Claude Code's own MCP tool-call timeout.
+MCP_ARGS=(--python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
+[[ -n "$EXEC_TIMEOUT" ]] && MCP_ARGS+=(--exec-timeout "$EXEC_TIMEOUT")
+MCP_ARGS_JSON="$(printf '"%s",' "${MCP_ARGS[@]}")"
+MCP_ARGS_JSON="[${MCP_ARGS_JSON%,}]"
 cat > "$WORK/mcp_config.json" <<JSON
-{"mcpServers":{"build123d":{"command":"uvx","args":["--python","3.12","$MCP_SPEC","--no-sandbox","--disable-tool-groups","drawing"]}}}
+{"mcpServers":{"build123d":{"command":"uvx","args":$MCP_ARGS_JSON}}}
 JSON
 
 echo "fixture: $FIX  ($TASK)"
 echo "work:    $WORK"
-echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<default>}    mcp: $MCP_SPEC  (--no-sandbox)"
+echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<default>}    mcp: $MCP_SPEC  exec-timeout: ${EXEC_TIMEOUT:-<default 120s>}  (--no-sandbox)"
 echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter.py $WORK"
 echo "running claude -p ..."
 

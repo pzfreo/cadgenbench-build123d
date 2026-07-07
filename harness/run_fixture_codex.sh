@@ -5,12 +5,13 @@
 # Claude driver so run_sweep.sh can dispatch to either by model id.
 #
 # Usage:
-#   harness/run_fixture_codex.sh <fixture_input_dir> <work_dir> [model] [mcp_spec]
+#   harness/run_fixture_codex.sh <fixture_input_dir> <work_dir> [model] [mcp_spec] [exec_timeout]
 #
 #   fixture_input_dir : holds input.png (generation) and optionally input.step (editing)
 #   work_dir          : output.step + stream.jsonl + filtered.log land here
 #   model             : codex model id (default: gpt-5.5)
 #   mcp_spec          : build123d-mcp version spec for uvx (default: build123d-mcp@latest)
+#   exec_timeout      : seconds, passed as --exec-timeout (default: server's own, 120s)
 #
 # Live log (in another terminal):
 #   tail -n0 -f <work_dir>/stream.jsonl | python3 harness/stream_filter_codex.py <work_dir>
@@ -21,6 +22,7 @@ FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
 MODEL="${3:-gpt-5.5}"
 MCP_SPEC="${4:-build123d-mcp@latest}"
+EXEC_TIMEOUT="${5:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # Optional reasoning-effort suffix on the model id: "gpt-5.5:high" -> model
@@ -88,7 +90,7 @@ fi
 
 echo "fixture: $FIX  ($TASK)"
 echo "work:    $WORK"
-echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<config default>}    mcp: $MCP_SPEC  (--no-sandbox)"
+echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<config default>}    mcp: $MCP_SPEC  exec-timeout: ${EXEC_TIMEOUT:-<default 120s>}  (--no-sandbox)"
 echo "images:  ${IMG_ARGS[*]:-<none>}"
 echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter_codex.py $WORK"
 echo "running codex exec ..."
@@ -109,6 +111,14 @@ uvx --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
 # (irrelevant here, pure schema-context overhead) — since Codex has no allowlist
 # to hide them client-side, this server-side flag is the ONLY way to keep them
 # out of a codex-driven run. Requires build123d-mcp >= 0.3.68.
+# EXEC_TIMEOUT (optional) raises the default 120s execute() timeout — field
+# evidence (fixtures 202/240) shows heavy sew/defeature/boolean repairs on large
+# imports genuinely need more wall-clock time, and the replay-recovery safety
+# net (#361) has its own budget, so avoiding the timeout beats recovering from
+# it. Keep it comfortably under tool_timeout_sec below, or Codex's own
+# client-side wait gives up first with a less graceful failure.
+MCP_ARGS_JSON="\"--python\",\"3.12\",\"$MCP_SPEC\",\"--no-sandbox\",\"--disable-tool-groups\",\"drawing\""
+[[ -n "$EXEC_TIMEOUT" ]] && MCP_ARGS_JSON="$MCP_ARGS_JSON,\"--exec-timeout\",\"$EXEC_TIMEOUT\""
 codex exec \
   --model "$MODEL" \
   ${MODEL_EFFORT:+-c model_reasoning_effort="$MODEL_EFFORT"} \
@@ -117,7 +127,7 @@ codex exec \
   --dangerously-bypass-approvals-and-sandbox \
   --json \
   -c 'mcp_servers.build123d.command="uvx"' \
-  -c "mcp_servers.build123d.args=[\"--python\",\"3.12\",\"$MCP_SPEC\",\"--no-sandbox\",\"--disable-tool-groups\",\"drawing\"]" \
+  -c "mcp_servers.build123d.args=[$MCP_ARGS_JSON]" \
   -c 'mcp_servers.build123d.startup_timeout_sec=120' \
   -c 'mcp_servers.build123d.tool_timeout_sec=600' \
   "${IMG_ARGS[@]+"${IMG_ARGS[@]}"}" \

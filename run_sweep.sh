@@ -4,7 +4,7 @@
 #   results/<run_name>/<id>/output.step
 #
 # Usage:
-#   run_sweep.sh <fixtures_file> <run_name> [model] [mcp_spec] [jobs]
+#   run_sweep.sh <fixtures_file> <run_name> [model] [mcp_spec] [jobs] [exec_timeout]
 #
 #   fixtures_file : one fixture id per line (# comments and blanks ignored)
 #   run_name      : names the work/ and results/ subdirectory for this sweep
@@ -16,6 +16,10 @@
 #   jobs          : fixtures to run concurrently (default 4). Each fixture has
 #                   its own work dir, so parallel runs never collide. If you hit
 #                   API rate limits (429s), lower this.
+#   exec_timeout  : seconds, passed to both drivers as --exec-timeout (default:
+#                   each server's own default, 120s). Codex's tool_timeout_sec
+#                   is fixed at 600s in run_fixture_codex.sh, so keep this under
+#                   that or Codex's own client-side wait gives up first.
 #
 # Watch one fixture live:
 #   tail -n0 -f work/<run>/<id>_run/stream.jsonl | python3 harness/stream_filter.py work/<run>/<id>_run
@@ -27,7 +31,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # ---- single-fixture worker (invoked by the parallel fan-out below) ----
 if [[ "${1:-}" == "--one" ]]; then
-  fid="$2"; RUN="$3"; MODEL="$4"; MCP_SPEC="$5"
+  fid="$2"; RUN="$3"; MODEL="$4"; MCP_SPEC="$5"; EXEC_TIMEOUT="${6:-}"
   WORKROOT="$HERE/work/$RUN"; RESULTS="$HERE/results/$RUN"
   IN="$WORKROOT/${fid}_in"; WORK="$WORKROOT/${fid}_run"
   mkdir -p "$WORKROOT" "$RESULTS/$fid"
@@ -43,7 +47,7 @@ if [[ "${1:-}" == "--one" ]]; then
     claude*|"") DRIVER="run_fixture.sh";      FILTER="stream_filter.py" ;;
     *)          DRIVER="run_fixture_codex.sh"; FILTER="stream_filter_codex.py" ;;
   esac
-  "$HERE/harness/$DRIVER" "$IN" "$WORK" "$MODEL" "$MCP_SPEC" \
+  "$HERE/harness/$DRIVER" "$IN" "$WORK" "$MODEL" "$MCP_SPEC" "$EXEC_TIMEOUT" \
         > "$WORKROOT/${fid}.driver.log" 2>&1 || echo "[$fid] run_fixture returned nonzero"
   # Save a readable, committable run log as verification evidence. stream_filter
   # drops the init event (paths/session id) and image blocks, and truncates — so
@@ -69,6 +73,7 @@ RUN="${2:?run name}"
 MODEL="${3:-claude-opus-4-8}"
 MCP_SPEC="${4:-build123d-mcp@latest}"
 JOBS="${5:-4}"
+EXEC_TIMEOUT="${6:-}"
 
 # A reasoning-effort suffix on the model id ("gpt-5.5:high", codex only) is part
 # of the scored system but otherwise silently inherits ~/.codex/config.toml.
@@ -108,6 +113,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
   "reasoning_effort": "$REASONING_EFFORT",
   "mcp_spec": "$MCP_SPEC",
   "mcp_version": "$MCP_VERSION",
+  "exec_timeout": "${EXEC_TIMEOUT:-default}",
   "git_commit": "$GIT_COMMIT",
   "git_branch": "$GIT_BRANCH",
   "git_dirty": $GIT_DIRTY,
@@ -117,11 +123,11 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 JSON
 [[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
 
-echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, mcp=$MCP_SPEC"
+echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, mcp=$MCP_SPEC, exec-timeout=${EXEC_TIMEOUT:-default}"
 echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION -> results/$RUN/run_meta.json"
 echo
 
-printf '%s\n' "$FIXES" | xargs -P "$JOBS" -I{} bash "$HERE/run_sweep.sh" --one {} "$RUN" "$MODEL" "$MCP_SPEC"
+printf '%s\n' "$FIXES" | xargs -P "$JOBS" -I{} bash "$HERE/run_sweep.sh" --one {} "$RUN" "$MODEL" "$MCP_SPEC" "$EXEC_TIMEOUT"
 
 echo
 collected="$(find "$HERE/results/$RUN" -name output.step 2>/dev/null | wc -l | tr -d ' ')"

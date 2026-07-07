@@ -1,0 +1,180 @@
+[   0s] session 019f3dd8-44d2-78b2-bd2d-5ccf878cd332
+[   0s] chat: I’ll use the build123d CAD tools for this edit. I’m going to load the STEP, validate and snapshot it first, then identify the smaller Z-axis bore’s upper XY opening before making the 10 mm +Z move.
+[   0s] . read_mcp_resource
+[   0s]   <- {"content": [{"type": "text", "text": "{\"server\":\"build123d\",\"uri\":\"build123d://quickref\",\"contents\":[{\"uri\":\"build123d://quickref\",\"mimeType\":\
+[   0s] . import_cad_file
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"imported\": \"part\",\n  \"format\": \"step\",\n  \"path\": \"/private/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000
+[   0s] chat: The STEP import succeeded; it is a large single solid, so import took a bit. I’m validating it now and saving the untouched rollback snapshot before any feature work.
+[   0s] >> validate(part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 B-rep is not well-formed (BRepCheck failed); 6 mesh open edge(s) \u2014 the tessellated bounda
+[   0s] chat: The imported input fails the validity gate before editing: BRepCheck failed plus 6 mesh open edges. I need to minimally heal the starting solid first, then snapshot that valid baseline before applying
+[   0s] . read_mcp_resource
+[   0s]   <- {"content": [{"type": "text", "text": "{\"server\":\"build123d\",\"uri\":\"build123d://skill/repair\",\"contents\":[{\"uri\":\"build123d://skill/repair\",\"mime
+[   0s] chat: I’ve loaded the repair ladder because the input is invalid before any requested change. Next I’m locating the exact failing topology so the baseline repair is as small as possible.
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'unchanged_import_invalid' saved. Geometry captured: current_shape, part."}], "structured_content": {"result": "
+[   0s] chat: I saved the untouched invalid import as a rollback reference. I’m now binding the imported solid into the persistent Python namespace so repair and later edit operations operate on the same in-session
+[   0s] execute #1: from build123d import * part = import_step("input.step") show(part, "part") print("loaded 
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'part': volume=4.382e+06 mm\u00b3, faces=2157\nloaded part volume 4381850.2164 faces 2157\n--- current_shape (
+[   0s] chat: The Python-side import matches the registered solid exactly. I’m locating the invalid faces/edges now so the starting repair can be targeted instead of broad remodelling.
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "13 defect(s) located (brep_invalid_face, mesh_open_edge):\n{\n  \"count\": 13,\n  \"defects\": [\n    {\n      \"kind\": 
+[   0s] chat: The gate defects are localized away from the requested bore feature: one unorientable planar face near `(-100.5, -157.5, -106.2)` and a cluster of mesh-open edges near `(62 to 64, -107.5, -103.8)`. I’
+[   0s] execute #2: from build123d import * from OCP.TopAbs import TopAbs_SOLID, TopAbs_SHELL, TopAbs_COMPOUND
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'healed_shape_fix': volume=4.382e+06 mm\u00b3, faces=2157\nvolume_delta 0.0\nbbox_size (449.506703, 355.0, 255
+[   0s] chat: ShapeFix did not alter the gross geometry, which is expected for a candidate repair. I’m running the validity gate on that candidate; if it still fails, I’ll move down the repair ladder.
+[   0s] >> validate(healed_shape_fix)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 B-rep is not well-formed (BRepCheck failed); 6 mesh open edge(s) \u2014 the tessellated bounda
+[   0s] chat: The first repair rung did not clear the gate, so I’m discarding that candidate. The named invalid face is planar, so the next targeted attempt is to rebuild just that face from its existing wire and l
+[   0s] execute #3: from build123d import * from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace from OCP.BR
+[   0s]   <- {"content": [{"type": "text", "text": "bad_face 1654 GeomType.PLANE 1.736615859 (-100.501856, -157.5, -106.157709)\nRegistered 'healed_face_patch': volume=4.382
+[   0s] chat: The targeted planar-face rebuild changed only a negligible numerical amount. I’m validating that patched candidate next, expecting the BRep face error to clear while checking whether the mesh-open clu
+[   0s] >> validate(healed_face_patch)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 B-rep is not well-formed (BRepCheck failed); 6 mesh open edge(s) \u2014 the tessellated bounda
+[   0s] chat: That patch did not clear the gate, so there are likely additional invalid faces beyond the one the first locator highlighted. I’m re-locating defects on the patched candidate to see whether the same f
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "13 defect(s) located (brep_invalid_face, mesh_open_edge):\n{\n  \"count\": 13,\n  \"defects\": [\n    {\n      \"kind\": 
+[   0s] chat: Rebuilding from the existing planar wire reproduced the invalid orientation, so I’m escalating to a targeted defeature of that tiny 1.74 mm² malformed face. The volume check will catch any accidental 
+[   0s] execute #4: from build123d import * from OCP.BRepAlgoAPI import BRepAlgoAPI_Defeaturing  bad_face = li
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'healed_defeature': volume=4.382e+06 mm\u00b3, faces=2157\nvolume_delta 0.0\nfaces 2157 edges 4762\n--- curren
+[   0s] chat: The defeature also left the gross geometry unchanged. I’m validating it; if this still fails, I’ll use face filling or a local cutout as the next targeted repair.
+[   0s] >> validate(healed_defeature)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 B-rep is not well-formed (BRepCheck failed); 6 mesh open edge(s) \u2014 the tessellated bounda
+[   0s] chat: The face-level repairs are not clearing the BRepCheck failure, so I’m doing a single-pass analyzer over the full solid to list every invalid face center directly. That will tell whether the reported f
+[   0s] execute #5: from build123d import * from OCP.BRepCheck import BRepCheck_Analyzer  def invalid_face_sum
+[   0s]   <- {"content": [{"type": "text", "text": "part invalid/nearzero faces 1\n(1654, 'GeomType.PLANE', 1.736615859, (-100.501856, -157.5, -106.157709))\nface_patch inva
+[   0s] chat: The single-pass analyzer confirms exactly one invalid face, the same tiny planar face. I’m inspecting its boundary coordinates now; if the existing wire is self-inconsistent, I’ll replace it with an e
+[   0s] execute #6: bad_face = list(part.faces())[bad_face_index] print("center", tuple(round(v, 9) for v in b
+[   0s]   <- {"content": [{"type": "text", "text": "center (-100.50185589, -157.5, -106.157708551) area 1.7366158589501905 wires 1 edges 5 verts 5\nwire 0 edges 5 length 11.
+[   0s] chat: The bad face is a five-edge curved sliver on the side wall, not a simple rectangle; rebuilding from the same wire preserved the issue. I’m filling that exact boundary with a new surface and re-sewing 
+[   0s] execute #7: from build123d import * from OCP.BRepFill import BRepFill_Filling from OCP.GeomAbs import 
+[   0s]   <- {"content": [{"type": "text", "text": "filled replace vol delta 130.858537084423\ntol 0.005 vol_delta 0.0007911780849099159 valid_brep True faces 2157\nRegister
+[   0s] chat: The fill-plus-sew candidate is BRep-valid in-process with only `0.0008 mm³` volume delta from the input, so this looks like the right minimal baseline repair. I’m running the full validity gate now, i
+[   0s] >> validate(healed_fill_sew)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 6 mesh open edge(s) \u2014 the tessellated boundary is not closed (non-conformal face junction
+[   0s] chat: The BRep error is fixed; the remaining baseline issue is a mesh-gate cluster at the previously located edge group. I’m localizing it on the healed candidate and then will patch only the involved face(
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "12 defect(s) located (mesh_open_edge):\n{\n  \"count\": 12,\n  \"defects\": [\n    {\n      \"kind\": \"mesh_open_edge\",
+[   0s] chat: The remaining defect cluster is small and localized around `(x≈63, y=-107.5, z≈-103.8)`. I’m listing nearby faces and edges by distance to that point so the mesh-only repair touches the specific probl
+[   0s] execute #8: from math import dist probe = (63.0, -107.5, -103.8) shape = healed_fill_sew near_faces = 
+[   0s]   <- {"content": [{"type": "text", "text": "near faces 3\n(1.675171259408556, 1220, 'GeomType.BSPLINE', 22.84557, (57.077766, -107.861988, -101.822583), 1.675171, 6)
+[   0s] chat: The mesh-open edges lie on a small BSpline face (`face 1220`, area about `22.85 mm²`) at the defect cluster, adjacent to a large torus blend. I’m replacing that BSpline patch from its existing boundar
+[   0s] execute #9: from build123d import * from OCP.BRepFill import BRepFill_Filling from OCP.GeomAbs import 
+[   0s]   <- {"content": [{"type": "text", "text": "mesh_bad_face 1220 GeomType.BSPLINE 22.84556963317671 (57.077766, -107.861988, -101.822583) edges 6\n edge 0 GeomType.CIR
+[   0s] chat: That patch remains BRep-valid and changes only about `4.39 mm³`, localized to the defective patch. I’m running the full gate now to check whether the mesh-open cluster is gone.
+[   0s] >> validate(mesh_healed_fill)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS (warning: mesh-level validity not verified \u2014 this shape is too large to tessellate and stitch wi
+[   0s] chat: The healed baseline passes the structural gate; the mesh check was skipped because of size, so I’m exporting it once as a checkpoint and then using this healed solid as the valid baseline for the requ
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'valid_healed_baseline' saved. Geometry captured: current_shape, part, healed_shape_fix, healed_face_patch, heal
+[   0s] chat: The valid healed baseline is snapshotted. I’m writing it to the required output path now as a non-final checkpoint, then I’ll overwrite it with the actual 10 mm bore-surface edit after verification.
+[   0s] >> export(mesh_healed_fill)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /private/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/cgb_fixture.TqTTGh/output.step\nvolume 4.382e+06 mm\
+[   0s] chat: The checkpoint export succeeded with BRep validity. I’m switching the working `part` variable to the healed baseline and then I’ll enumerate Z-axis circular/annular planar faces to confirm the smaller
+[   0s] execute #10: part = mesh_healed_fill show(part, "part") print("working baseline volume", round(part.vol
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'part': volume=4.382e+06 mm\u00b3, faces=2157\nworking baseline volume 4381854.6091 faces 2157\n\nSession obje
+[   0s] chat: I’m using numeric feature recognition first rather than eyeballing the render. The target should appear as a Z-axis bore with an annular planar face bounded by two concentric circular edges.
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 32, \"holes\": [{\"axis\": [0.0, 1.0, 0.0], \"location\": [-96.5145, -80.3995, -4.7774], \"diameter\": 80.0, 
+[   0s] chat: Feature recognition found the two large bores as coaxial circular holes in the model’s depth direction, with centers near `x=-96.5` and `x=98.5`. I’m now enumerating annular planar faces bounded by co
+[   0s] execute #11: from math import sqrt  def vec_round(v, nd=4):     return tuple(round(float(x), nd) for x 
+[   0s]   <- {"content": [{"type": "text", "text": "annular candidate faces 0\n# vars: a=1, b=1, c1=(-172.8157677428007, -97.5, -57.947974916429224), c2=(-176.942277350339, 
+[   0s] chat: The simple edge-center method is not enough because circular edges are split arcs, so their `center()` is an arc centroid rather than the circle center. I’m switching to OCCT’s curve adaptor to read t
+[   0s] execute #12: from math import sqrt from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface f
+[   0s]   <- {"content": [{"type": "text", "text": "annular candidate faces 69\n{'face_index': 1965, 'face_center': (-9.7649, -177.5, -0.3939), 'plane_point': (-96.5145, -17
+[   0s] chat: The smaller bore’s clean full annular opening is face `0`: center `(-96.5145, -17.5, -4.7774)`, radii `33/40 mm`, normal in the model’s bore direction. It matches the described smaller principal bore 
+[   0s] chat: I’m placing a temporary marker at the resolved annular face center and rendering it with the face highlighted. This is just for visual confirmation; the marker will not be included in the edited/expor
+[   0s] execute #13: target_face_index = 0 target_face = list(part.faces())[target_face_index] target_center = 
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'target_marker': volume=904.8 mm\u00b3, faces=1\ntarget_face 0 center (-96.5145, -17.5, -4.7774) area 1605.353
+[   0s] chat: The target marker is in place at the smaller bore annular opening. I’m rendering the marked model once in the front orientation to cross-check it against the reference view before cutting.
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "image", "data": "iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAIAAAAVFBUnAAAgAElEQVR4Xu3de6wt6Vnf+edde59bt7vN9BgwSCaIy8SQCxmwiccKZCSCHbAsBETAxExCPHIY
+[   0s] chat: The PNG tessellator skipped the large part, so the marker render only showed the marker. I’m retrying the confirmation as an HLR/SVG projection, which avoids the tessellation path and should still sho
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "text", "text": "[SEND: /private/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/cgb_fixture.TqTTGh/renders/target_confirm.svg]"}, {"type"
+[   0s] chat: The visual confirmation step is complete via HLR. Before making the move, I’m reading the local bore stack numerically so the boolean changes the face in the correct direction and magnitude rather tha
+[   0s] execute #14: from OCP.BRepAdaptor import BRepAdaptor_Surface from OCP.GeomAbs import GeomAbs_Cylinder f
+[   0s]   <- {"content": [{"type": "text", "text": "small bore coaxial cylinder faces 50\n(1, 33.0, (0.0, -1.0, 0.0), -45.5, -17.5, 5805.6632, (-63.5145, -31.5, -4.7774))\n(
+[   0s] chat: To avoid a direction mistake, I’m checking a few specific points around the face, not a grid. This tells me which side of the annular face is material and whether the 10 mm displacement should be impl
+[   0s] execute #15: from build123d import Vector cx, cy, cz = target_center # sample named points at bore cent
+[   0s]   <- {"content": [{"type": "text", "text": "center_y_minus (-96.514, -19.5, -4.777) False\ncenter_y_plus (-96.514, -15.5, -4.777) False\nannulus_y_minus (-60.514, -1
+[   0s] chat: The point checks show material lies on the negative side of the target face and void lies in the +depth direction. Moving the face +10 mm therefore requires adding an annular ring from the current fac
+[   0s] execute #16: # Quick orientation check for a cylinder rotated from default Z-axis to the model bore axi
+[   0s]   <- {"content": [{"type": "text", "text": "orientation_test_bbox (2.0, 2.0, 2.0) minY -1.0 maxY 1.0\n--- current_shape ---\nvolume: 6.283 (-898, -99.3%) mm\u00b3  |
+[   0s] chat: The first orientation check used equal diameter and height, so it was inconclusive. I’m checking with a long cylinder, then I’ll apply the annular fuse from the named target values.
+[   0s] execute #17: orientation_test = Cylinder(1, 12).rotate(Axis.X, 90) bb = orientation_test.bounding_box()
+[   0s]   <- {"content": [{"type": "text", "text": "orientation_test_bbox (2.0, 12.0, 2.0) minY -6.0 maxY 6.0\n\nSession objects: part (Solid, 2157 faces), healed_shape_fix 
+[   0s] chat: I’m applying the requested move now from named values: current face depth `-17.5 mm`, target `-7.5 mm`, delta `+10.0 mm`. The added tool is an annular prism matching the two concentric circles of the 
+[   0s] execute #18: from build123d import * from math import pi  # --- requested edit parameters (mm, model bo
+[   0s]   <- {"content": [{"type": "text", "text": "tool_bbox (80.0, 10.2, 80.0) y_range -17.7 -7.5\ntool_volume 16374.6092 expected_visible_added 16053.5385\nRegistered 'ed
+[   0s] chat: The fuse changed the volume by `16052.96 mm³`, matching the expected annular 10 mm move (`16053.54 mm³`) within normal boolean tolerance. I’m validating the edited solid now before any further measure
+[   0s] >> validate(edited_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS (warning: mesh-level validity not verified \u2014 this shape is too large to tessellate and stitch wi
+[   0s] chat: The edited solid passes the BRep validity gate. I’m exporting this changed result to `output.step` now as the working checkpoint, then I’ll verify the moved face location and localized change.
+[   0s] >> export(edited_part)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /private/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/cgb_fixture.TqTTGh/output.step\nvolume 4.398e+06 mm\
+[   0s] chat: The STEP export wrote a changed file but the export gate rejected the round-tripped B-rep. I’m not accepting that checkpoint; I’m locating the export-gate defect on `edited_part` and will repair the s
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "310 defect(s) located (brep_invalid_face, mesh_open_edge):\n{\n  \"count\": 310,\n  \"defects\": [\n    {\n      \"kind\"
+[   0s] chat: The export-gate defects are on the added ring’s buried overlap and old face plane, so the overlap made the fuse worse after STEP round-trip. I’m retrying the same named 10 mm face move with an exact n
+[   0s] execute #19: # Retry the same edit without buried overlap; the previous overlap introduced bad orientat
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'edited_part_no_overlap': volume=4.398e+06 mm\u00b3, faces=2163\nactual_volume_delta 16052.885322 expected 160
+[   0s] chat: The exact-face retry produced the same intended volume change without the buried seam. I’m validating this candidate before attempting export.
+[   0s] >> validate(edited_part_no_overlap)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS (warning: mesh-level validity not verified \u2014 this shape is too large to tessellate and stitch wi
+[   0s] chat: The exact annular addition passes the in-session BRep gate. I’m exporting it now to see whether it survives the stricter STEP round-trip.
+[   0s] >> export(edited_part_no_overlap)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /private/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/cgb_fixture.TqTTGh/output.step\nvolume 4.398e+06 mm\
+[   0s] chat: The no-overlap fuse still fails after STEP export, so the issue is the union topology itself around the moved annulus. I’m locating the invalid faces on this candidate and will repair/rebuild just the
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "314 defect(s) located (brep_invalid_face, mesh_nonmanifold_vertex, mesh_open_edge):\n{\n  \"count\": 314,\n  \"defects\":
+[   0s] chat: The invalid faces are the old annular-plane remnants at `-17.5`; they should not remain visible after the face is raised. I’m trying a targeted defeature of only those four malformed old-plane faces o
+[   0s] execute #20: from OCP.BRepAlgoAPI import BRepAlgoAPI_Defeaturing  edit_base = edited_part_no_overlap in
+[   0s]   <- {"content": [{"type": "text", "text": "remove 0 GeomType.PLANE 0.003277 (-100.9672, -17.5, -30.3102)\nremove 1041 GeomType.SPHERE 7.427651 (185.2869, 123.7303, 
+[   0s] chat: The locator indices are not matching the live face order for two of those entries, so I’m switching to a BRep analyzer pass over the edited candidate and selecting invalid faces by actual status/cente
+[   0s] execute #21: from OCP.BRepCheck import BRepCheck_Analyzer  def invalid_faces_by_analyzer(shape, label):
+[   0s]   <- {"content": [{"type": "text", "text": "edited_no_overlap invalid face count 0\n\nSession objects: part (Solid, 2157 faces), healed_shape_fix (Solid, 2157 faces)
+[   0s] chat: The live candidate is BRep-valid, but the STEP round-trip is not. That means the failure is introduced by export/re-import tolerance/serialization. I’m importing the exported file under a separate nam
+[   0s] . import_cad_file
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"imported\": \"exported_bad\",\n  \"format\": \"step\",\n  \"path\": \"/private/var/folders/5j/3g54pf157x7_h9bsv_r9
+[   0s] chat: The exported STEP re-imported as a distinct invalid solid, with a small volume drift versus the live candidate. I’m locating its exact BRep defects so I can target the serialization problem.
+[   0s] >> validate(exported_bad)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: FAIL \u2014 B-rep is not well-formed (BRepCheck failed) (warning: mesh-level validity not verified \u2014 
+[   0s] chat: The re-imported STEP has only a BRepCheck failure, no open/non-manifold B-rep edges. I’m doing a focused face analyzer on that imported object to identify the malformed exported faces.
+[   0s] . locate_gate_defects
+[   0s]   <- {"content": [{"type": "text", "text": "314 defect(s) located (brep_invalid_face, mesh_nonmanifold_vertex, mesh_open_edge):\n{\n  \"count\": 314,\n  \"defects\":
+[   0s] chat: Rather than relying on a boolean fuse that leaves a bad old-plane seam after STEP export, I’m rebuilding the local topology explicitly: remove the original annular face, add the moved annular cap plus
+[   0s] execute #22: from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing from OCP.BRepCheck import BRepCheck_A
+[   0s]   <- {"content": [{"type": "text", "text": "patch_face (0, 'GeomType.CYLINDER', 2513.274123, (-136.5145, -12.5, -4.7774), True)\npatch_face (1, 'GeomType.PLANE', 160
+[   0s] chat: The sewn local face-move patch is BRep-valid and its volume delta matches the expected annular 10 mm displacement. I’m running the full gate and then exporting this topology-rebuilt version.
+[   0s] >> validate(sewn_edit)
+[   0s]   <- {"content": [{"type": "text", "text": "Validity gate: PASS (warning: mesh-level validity not verified \u2014 this shape is too large to tessellate and stitch wi
+[   0s] chat: The sewn edit passes the in-session gate. I’m exporting it to the required path now and checking the export gate result carefully.
+[   0s] >> export(sewn_edit)
+[   0s]   <- {"content": [{"type": "text", "text": "Exported to /private/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/cgb_fixture.TqTTGh/output.step\nvolume 4.398e+06 mm\
+[   0s] chat: The export now succeeds without a validity-gate failure. I’m saving this edited state, then I’ll verify the new annular face coordinate and run shape comparisons against the healed baseline and the or
+[   0s] . save_snapshot
+[   0s]   <- {"content": [{"type": "text", "text": "Snapshot 'valid_exported_sewn_edit' saved. Geometry captured: current_shape, part, healed_shape_fix, healed_face_patch, h
+[   0s] chat: I’m verifying the changed dimension directly now: the old annular face at `-17.5` should be gone, and the same `33/40 mm` concentric-circle face should exist at `-7.5`, exactly 10 mm in the requested 
+[   0s] execute #23: # Verify the moved annular face position and absence of the old target face. def annular_f
+[   0s]   <- {"content": [{"type": "text", "text": "baseline matches 1\n(0, (-96.5145, -17.5, -4.7774), 1605.3538, [(33.0, -17.5, 6.2832), (40.0, -17.5, 6.2832)])\nsewn_edit
+[   0s] chat: The numeric check confirms the target face moved from `-17.5` to `-7.5` with the same `33/40 mm` concentric circles, and the old plane is gone. I’m making one post-edit front projection for visual com
+[   0s] . render_view
+[   0s]   <- {"content": [{"type": "text", "text": "[SEND: /private/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/cgb_fixture.TqTTGh/renders/sewn_edit_front.svg]"}, {"type
+[   0s] chat: The post-edit projection completed. I’m now registering the unedited `input.step` as `original` and running localized shape comparisons, first against the healed baseline to prove only the requested r
+[   0s] execute #24: original = import_step("input.step") show(original, "original") print("original volume", r
+[   0s]   <- {"content": [{"type": "text", "text": "Registered 'original': volume=4.382e+06 mm\u00b3, faces=2157\noriginal volume 4381850.2164 faces 2157\n--- current_shape 
+[   0s] chat: `original` is registered from the untouched input. I’m running shape comparison against the healed baseline first; that isolates the requested edit from the tiny baseline repairs needed to make the in
+[   0s] . shape_compare
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"a\": {\n    \"name\": \"part\",\n    \"volume\": 4381854.6091,\n    \"faces\": 2157,\n    \"edges\": 4762,\n    \"
+[   0s] chat: Shape comparison against the healed baseline localizes the edit exactly at the smaller bore annular face, reports `max_deviation: 10.0`, and `unchanged_elsewhere: true`. I’m also comparing against the
+[   0s] . shape_compare
+[   0s]   <- {"content": [{"type": "text", "text": "{\n  \"a\": {\n    \"name\": \"original\",\n    \"volume\": 4381850.2164,\n    \"faces\": 2157,\n    \"edges\": 4762,\n  
+[   0s] chat: The original-to-edited comparison also reports the same localized 10 mm change and `unchanged_elsewhere: true`. I’m doing one final hole-recognition pass to make sure the broader hole/void count staye
+[   0s] . find_holes
+[   0s]   <- {"content": [{"type": "text", "text": "{\"count\": 32, \"holes\": [{\"axis\": [0.0, -1.0, 0.0], \"location\": [98.4855, -98.5, -4.7774], \"diameter\": 160.0, \"
+[   0s] chat: Done. Wrote the edited model to [output.step](/var/folders/5j/3g54pf157x7_h9bsv_r9dcpm0000gn/T/cgb_fixture.TqTTGh/output.step).
+
+Verification:
+- Smaller bore annular face preserved its `33/40 mm` conc
+[   0s] RESULT tokens in=4988147 out=28856

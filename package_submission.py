@@ -64,10 +64,12 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
     """Build the upload-ready zip: meta.json + every fixture dir at the root.
 
     Pads to the canonical full fixture set (CADGenBench requires every sample dir
-    present; missing outputs score 0). meta.json's notes are auto-stamped with the
-    exact system from run_meta — model, resolved build123d-mcp version, and the
-    cadgenbench-build123d commit (which pins the prompts/harness) — so the upload
-    is self-describing. agent_url is the commit permalink.
+    present; missing outputs score 0). Empty fixture directories are written as
+    explicit zip directory entries, not placeholder files. meta.json's notes are
+    auto-stamped with the exact system from run_meta — model, resolved
+    build123d-mcp version, and the cadgenbench-build123d commit (which pins the
+    prompts/harness) — so the upload is self-describing. agent_url is the commit
+    permalink.
     """
     rm = manifest.get("run_meta", {})
     model = rm.get("model", "unknown")
@@ -122,8 +124,6 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
         out = root / fid / "output.step"
         if out.exists() and out.stat().st_size > 0:
             shutil.copy(out, d / "output.step")
-        else:
-            (d / ".keep").write_text("no candidate submitted\n")
 
     zip_path = Path("submit") / f"{root.name}.zip"
     if zip_path.exists():
@@ -131,10 +131,10 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(stage / "meta.json", "meta.json")
         for fid in ids:
-            for fn in ("output.step", ".keep"):
-                f = stage / fid / fn
-                if f.exists():
-                    zf.write(f, f"{fid}/{fn}")
+            zf.write(stage / fid, f"{fid}/")
+            f = stage / fid / "output.step"
+            if f.exists():
+                zf.write(f, f"{fid}/output.step")
     print(f"\n=== submission zip: {zip_path} ===")
     print(f"  fixtures        : {len(ids)} dirs, {n_out} with output.step")
     print(f"  submitter_name  : {submitter}")

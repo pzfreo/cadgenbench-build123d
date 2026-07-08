@@ -142,19 +142,103 @@ than Claude Code's `Read` + `Bash`-crop. The prompts themselves are unchanged.
 
 ## Validate / package the submission
 
+Run the packager after every sweep you care about. It always writes a local
+proxy-gate manifest first:
+
 ```bash
 uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
-    python package_submission.py results/opus48-v1 --zip --name "<submission-name>"
+    python package_submission.py results/opus48-v1
 ```
 
-This writes `results/opus48-v1/manifest.json` (present / missing / gate verdict
-per fixture) and, with `--zip`, the upload-ready `submit/opus48-v1.zip` — the
-full fixture set with an auto-generated `meta.json` whose notes are stamped from
-the run's provenance (model + resolved build123d-mcp version + the
-cadgenbench-build123d commit that pins the prompts), `agent_url` set to that
-commit's permalink, and `submitter_name`/`submission_name` = `pzfreo` (override
-with `--submitter` / `--name`). The validity gate runs `exact=True` so large
-parts aren't false-flagged.
+This writes `results/opus48-v1/manifest.json` with one entry per result
+subdirectory: whether `output.step` is present, whether the local
+build123d-mcp proxy gate passed, and any warnings. Treat this as the local
+pre-flight check, not as the official leaderboard verdict.
+
+To build the upload artifact, add `--zip`:
+
+```bash
+uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
+    python package_submission.py results/opus48-v1 \
+    --zip --name "<submission-name>"
+```
+
+By default `--zip` pads to `splits/all.txt`, producing
+`submit/opus48-v1.zip` with all canonical CADGenBench fixture directories at
+the zip root. Directories with a submitted candidate contain `output.step`;
+directories without a candidate are written as explicit empty directory entries
+inside the zip. Missing outputs are expected to score zero.
+
+For a smoke/debug upload that should contain only a smaller fixture universe,
+override the padding list explicitly:
+
+```bash
+uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
+    python package_submission.py results/gpt55-v0372-smoke5 \
+    --zip --full-set splits/smoke4-v0372.txt \
+    --name gpt55-v0372-smoke5
+```
+
+For a leaderboard-style upload from a partial run where you still want every
+canonical fixture directory present, keep the default `--full-set splits/all.txt`:
+
+```bash
+uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
+    python package_submission.py results/gpt55-v0372-smoke5 \
+    --zip --name gpt55-v0372-smoke5
+```
+
+That writes `submit/gpt55-v0372-smoke5.zip` with all 81 fixture directories and
+only the produced outputs filled in.
+
+The generated zip includes an auto-generated root `meta.json`. Its notes are
+stamped from `run_meta.json`: model, reasoning effort, resolved build123d-mcp
+version, and the cadgenbench-build123d commit that pins prompts/harness.
+`agent_url` points at that commit permalink. `submitter_name` defaults to
+`pzfreo`, and `submission_name` defaults to `pzfreo`; override them with
+`--submitter` and `--name`.
+
+Sanity-check the zip before upload when in doubt:
+
+```bash
+python3 - <<'PY'
+import zipfile
+from pathlib import Path
+p = Path("submit/gpt55-v0372-smoke5.zip")
+with zipfile.ZipFile(p) as z:
+    names = z.namelist()
+    dirs = {n.split("/")[0] for n in names if "/" in n and n.split("/")[0].isdigit()}
+    outputs = [n for n in names if n.endswith("/output.step")]
+    print("fixture_dirs", len(dirs))
+    print("outputs", len(outputs), sorted(n.split("/")[0] for n in outputs))
+    print("has_meta", "meta.json" in names)
+PY
+```
+
+Upload the zip through the CADGenBench Hugging Face Space:
+<https://huggingface.co/spaces/HuggingAI4Engineering/CADGenBench>. After upload,
+the Space runs the authoritative Linux-side validity/scoring pipeline and
+reports the accepted/missing/invalid status per fixture.
+
+After the Space finishes processing, query the published leaderboard directly:
+
+```bash
+python3 tools/fetch_leaderboard.py
+```
+
+That reads the same `results.jsonl` dataset used by the Space UI, writes
+`leaderboard.csv`, and records a deduplicated history under
+`tools/.leaderboard-store/`. For machine-readable output:
+
+```bash
+python3 tools/fetch_leaderboard.py --format json
+```
+
+To inspect the local change timeline later:
+
+```bash
+python3 tools/fetch_leaderboard.py --log
+```
 
 ### The build123d-mcp gate is a proxy, not the authoritative gate
 

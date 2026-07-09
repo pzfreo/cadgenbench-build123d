@@ -103,19 +103,16 @@ cd "$WORK"
 # opus48 sweeps. locate_gate_defects (mcp >= 0.3.58) returns the 3D coordinates +
 # B-rep identity of a validity-gate failure so the agent repairs the exact spot
 # instead of blind (the codex path already sees it; the Claude allowlist lacked
-# it). shape_compare is editing-only (verify the edit changed only what was
-# asked). load_part/search_library (no library), the 2D-drawing-authoring tools,
-# reset, and diagnostics are intentionally excluded as irrelevant here.
+# it). compare verifies fit and, for editing, verifies the edit changed only what
+# was asked. load_part/search_library (no library), the 2D-drawing-authoring
+# tools, reset, and diagnostics are intentionally excluded as irrelevant here.
 # verify_spec/suggest_spec are DELIBERATELY excluded (not just unprompted): across
 # two full 81-fixture runs, fixtures where the agent called them scored worse on
 # average than fixtures that didn't (-0.037/-0.049 vs -0.009/+0.017), because a
 # "conforms: true" result reliably reads to the model as a stop signal regardless
 # of prompt caveats saying otherwise (build123d-mcp#362). The Codex driver has no
 # equivalent allowlist, so this can only be hard-blocked here.
-ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__clearance,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects"
-if [[ "$TASK" == "editing" ]]; then
-  ALLOWED="$ALLOWED,mcp__build123d__shape_compare"
-fi
+ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects"
 
 # Eagerly load the build123d MCP tool schemas instead of deferring them behind
 # the ToolSearch tool (Claude Code's default). Deferral cost ~3 ToolSearch calls

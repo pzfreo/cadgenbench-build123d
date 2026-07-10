@@ -39,7 +39,7 @@ on the right side of the line:
 
 ## Prerequisites
 
-- `claude` (Claude Code), `uvx`, and `uv` on `PATH`. For the Codex/GPT-5.5 path,
+- `claude` (Claude Code) and `uv` on `PATH`. For the Codex/GPT-5.5 path,
   a logged-in `codex` CLI (`codex login`) too.
 
 ## Run a sweep

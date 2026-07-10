@@ -8,13 +8,13 @@
 #   fixture_input_dir : holds input.png (generation) and optionally input.step (editing)
 #   work_dir          : output.step + stream.jsonl + filtered.log land here
 #   model             : claude model id (default: claude-opus-4-8)
-#   mcp_spec          : build123d-mcp version spec for uvx (default: build123d-mcp@latest)
+#   mcp_spec          : build123d-mcp version spec for uv tool run (default: build123d-mcp@latest)
 #   exec_timeout      : seconds, passed as --exec-timeout (default: server's own, 120s)
 #
 # Live log (in another terminal):
 #   tail -n0 -f <work_dir>/stream.jsonl | python3 eval/stream_filter.py <work_dir>
 #
-# Requires: `claude` (Claude Code) and `uvx` on PATH.
+# Requires: `claude` (Claude Code) and `uv` on PATH.
 set -euo pipefail
 FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
@@ -35,7 +35,7 @@ EFFORT_ARG=()
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 command -v claude >/dev/null || { echo "ERROR: 'claude' (Claude Code) not on PATH"; exit 1; }
-command -v uvx    >/dev/null || { echo "ERROR: 'uvx' not on PATH"; exit 1; }
+command -v uv     >/dev/null || { echo "ERROR: 'uv' not on PATH"; exit 1; }
 
 # --- Run isolation: execute in a scratch dir OUTSIDE the repo, mirror artifacts back. ---
 # The agent runs with CWD=$WORK and is given the $OUT path in its prompt. When those sit
@@ -82,12 +82,12 @@ fi
 # large imports genuinely need more wall-clock time, and the replay-recovery
 # safety net (#361) has its own budget, so avoiding the timeout beats recovering
 # from it. Kept comfortably under Claude Code's own MCP tool-call timeout.
-MCP_ARGS=(--python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
+MCP_ARGS=(tool run --python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
 [[ -n "$EXEC_TIMEOUT" ]] && MCP_ARGS+=(--exec-timeout "$EXEC_TIMEOUT")
 MCP_ARGS_JSON="$(printf '"%s",' "${MCP_ARGS[@]}")"
 MCP_ARGS_JSON="[${MCP_ARGS_JSON%,}]"
 cat > "$WORK/mcp_config.json" <<JSON
-{"mcpServers":{"build123d":{"command":"uvx","args":$MCP_ARGS_JSON}}}
+{"mcpServers":{"build123d":{"command":"uv","args":$MCP_ARGS_JSON}}}
 JSON
 
 echo "fixture: $FIX  ($TASK)"

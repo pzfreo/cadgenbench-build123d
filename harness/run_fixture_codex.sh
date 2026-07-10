@@ -10,13 +10,13 @@
 #   fixture_input_dir : holds input.png (generation) and optionally input.step (editing)
 #   work_dir          : output.step + stream.jsonl + filtered.log land here
 #   model             : codex model id (default: gpt-5.5)
-#   mcp_spec          : build123d-mcp version spec for uvx (default: build123d-mcp@latest)
+#   mcp_spec          : build123d-mcp version spec for uv tool run (default: build123d-mcp@latest)
 #   exec_timeout      : seconds, passed as --exec-timeout (default: server's own, 120s)
 #
 # Live log (in another terminal):
 #   tail -n0 -f <work_dir>/stream.jsonl | python3 harness/stream_filter_codex.py <work_dir>
 #
-# Requires: `codex` (Codex CLI, logged in) and `uvx` on PATH.
+# Requires: `codex` (Codex CLI, logged in) and `uv` on PATH.
 set -euo pipefail
 FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
@@ -35,7 +35,7 @@ case "$MODEL" in
 esac
 
 command -v codex >/dev/null || { echo "ERROR: 'codex' (Codex CLI) not on PATH"; exit 1; }
-command -v uvx   >/dev/null || { echo "ERROR: 'uvx' not on PATH"; exit 1; }
+command -v uv    >/dev/null || { echo "ERROR: 'uv' not on PATH"; exit 1; }
 
 # --- Run isolation: execute in a scratch dir OUTSIDE the repo, mirror artifacts back. ---
 # The agent is handed its CWD (--cd) and the $OUT path inside the prompt. When those sit
@@ -46,7 +46,7 @@ command -v uvx   >/dev/null || { echo "ERROR: 'uvx' not on PATH"; exit 1; }
 # temp dir removes that breadcrumb. We just repoint WORK at the scratch dir: every body
 # reference (inputs, prompt.txt, $OUT, stream.jsonl) then lands there, and the EXIT trap
 # copies the artifacts back into the real work dir so run_sweep.sh is unchanged. (This is
-# not a hard OS sandbox — full bypass is kept for MCP/uvx friction — but it closes the
+# not a hard OS sandbox — full bypass is kept for MCP/uv friction — but it closes the
 # only path the agent actually used to reach prior runs.)
 REAL_WORK="$WORK"
 mkdir -p "$REAL_WORK"
@@ -97,9 +97,9 @@ echo "running codex exec ..."
 
 cd "$WORK"
 
-# Pre-warm uvx so build123d-mcp is installed before Codex's MCP startup timeout
+# Pre-warm the tool environment so build123d-mcp is installed before Codex's MCP startup timeout
 # fires on a cold cache (first-run install can be slow).
-uvx --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
+uv tool run --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
 
 # Codex has no per-call tool allowlist (unlike Claude's --allowedTools); it exposes
 # all of build123d-mcp's tools to the model. We launch the server with --no-sandbox
@@ -117,7 +117,7 @@ uvx --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
 # net (#361) has its own budget, so avoiding the timeout beats recovering from
 # it. Keep it comfortably under tool_timeout_sec below, or Codex's own
 # client-side wait gives up first with a less graceful failure.
-MCP_ARGS_JSON="\"--python\",\"3.12\",\"$MCP_SPEC\",\"--no-sandbox\",\"--disable-tool-groups\",\"drawing\""
+MCP_ARGS_JSON="\"tool\",\"run\",\"--python\",\"3.12\",\"$MCP_SPEC\",\"--no-sandbox\",\"--disable-tool-groups\",\"drawing\""
 [[ -n "$EXEC_TIMEOUT" ]] && MCP_ARGS_JSON="$MCP_ARGS_JSON,\"--exec-timeout\",\"$EXEC_TIMEOUT\""
 codex exec \
   --model "$MODEL" \
@@ -126,7 +126,7 @@ codex exec \
   --skip-git-repo-check \
   --dangerously-bypass-approvals-and-sandbox \
   --json \
-  -c 'mcp_servers.build123d.command="uvx"' \
+  -c 'mcp_servers.build123d.command="uv"' \
   -c "mcp_servers.build123d.args=[$MCP_ARGS_JSON]" \
   -c 'mcp_servers.build123d.startup_timeout_sec=120' \
   -c 'mcp_servers.build123d.tool_timeout_sec=600' \

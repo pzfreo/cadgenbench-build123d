@@ -4,7 +4,10 @@ For each ``selfbench/fixtures/<id>/part.py`` this:
 
 1. execs ``part.py`` and pulls its module-level ``part`` (the ground truth),
 2. exports ``ground_truth.step`` (held locally; never shown to the agent),
-3. renders a CADGenBench-style engineering drawing with draftwright (PDF),
+3. renders a CADGenBench-style engineering drawing with draftwright (PDF) —
+   either from the STEP via auto-recognition (default), or, when ``part.py``
+   defines an ``author()`` hook, from an explicitly-declared draftwright
+   ``Sheet`` (see "Inference-load fixtures" in selfbench/README.md),
 4. rasterises page 1 to ``input.png`` (the agent's only visual input),
 5. writes ``description.yaml`` in the canonical generation-fixture format.
 
@@ -46,11 +49,33 @@ RASTER_DPI = 260  # ~3040x2150 for an A4 page — matches real fixture input.png
 
 
 def _load_part(part_py: Path):
-    """Exec a fixture's part.py and return (part, title)."""
+    """Exec a fixture's part.py and return its namespace (with ``part``, ``title``)."""
     ns = runpy.run_path(str(part_py))
     if "part" not in ns:
         raise SystemExit(f"{part_py} defines no module-level `part`")
-    return ns["part"], ns.get("title") or part_py.parent.name
+    return ns
+
+
+def _drawing_pdf(ns: dict, gt_step: Path, title: str, tmp: Path) -> Path:
+    """Render the drawing PDF and return its path.
+
+    Two paths, one output. If ``part.py`` defines an ``author()`` hook it must
+    return a configured draftwright ``Sheet``; we build and export that (the
+    declarative path — the fixture owns exactly which dimensions are stated vs.
+    inferred). Otherwise draftwright recognises features from the STEP.
+    """
+    author = ns.get("author")
+    if callable(author):
+        drawing = author().build()
+        return Path(drawing.export_pdf(str(tmp / "dwg")))
+
+    prefix = tmp / "dwg"
+    subprocess.run(
+        ["draftwright", str(gt_step), "--format", "pdf",
+         "--out", str(prefix), "--title", title],
+        check=True,
+    )
+    return prefix.with_suffix(".pdf")
 
 
 def author_one(fixture_dir: Path) -> None:
@@ -60,20 +85,15 @@ def author_one(fixture_dir: Path) -> None:
 
     from build123d import export_step  # local import: needs the authoring env
 
-    part, title = _load_part(part_py)
+    ns = _load_part(part_py)
+    part = ns["part"]
+    title = ns.get("title") or fixture_dir.name
 
     gt_step = fixture_dir / "ground_truth.step"
     export_step(part, str(gt_step))
 
-    # draftwright: STEP -> annotated multi-view drawing (PDF).
     with tempfile.TemporaryDirectory() as tmp:
-        prefix = Path(tmp) / "dwg"
-        subprocess.run(
-            ["draftwright", str(gt_step), "--format", "pdf",
-             "--out", str(prefix), "--title", title],
-            check=True,
-        )
-        pdf = prefix.with_suffix(".pdf")
+        pdf = _drawing_pdf(ns, gt_step, title, Path(tmp))
 
         # Rasterise page 1 -> input.png (the agent's only visual input).
         import fitz  # pymupdf

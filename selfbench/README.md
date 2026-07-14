@@ -95,6 +95,16 @@ change: the lever for a discriminating dev set is dimension *inference*, not
 geometry. Author such fixtures with the declarative `author()` hook, which lets
 you choose exactly which dimensions are stated vs. inferred.
 
+**9014 / 9015 / 9016** apply that trap as standalone hard fixtures — squat
+thin-wall covers (9013's topology) on wide / square / long footprints, each
+stating overall + boss height so the body height must be derived. All verified
+**< 0.65** for GPT-5.5 (n=3, all samples): 9014 ~0.62, 9015 ~0.38, 9016 ~0.59.
+The effect is proportion-sensitive: the trap bites reliably only when the body
+is squat (height ≲ footprint) with a small boss on top; taller bodies, the
+flange-and-cup topology, or twin symmetric bosses let GPT reconcile the overall
+correctly and score ~0.9. So these hug 9013's proportions rather than reaching
+for exotic geometry.
+
 ## Notes
 
 - The scorer pins `cadgenbench` to the commit the Space used at build time

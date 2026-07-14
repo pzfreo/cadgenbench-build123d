@@ -69,6 +69,32 @@ optionally `title`), add the id to `selfbench.txt`, re-run `author_fixtures.py`.
 Keep parts unambiguous from the drawing alone — you're testing the agent's CAD,
 not its guesswork.
 
+By default the drawing is rendered from the STEP by draftwright's feature
+recognition. A `part.py` may instead define an **`author()` hook** returning a
+configured draftwright `Sheet`; then the fixture *declares* its own drawing
+(which features and dimensions appear, stated vs. inferred) with recognition
+skipped. Use this when recognition drops or crowds a callout, or to control the
+dimensioning deliberately (see below). See `fixtures/9011/part.py`.
+
+## Inference-load fixtures
+
+The current 9001–9010 use clean, direct dimensioning — the very "optimism bias"
+flagged above — and GPT-5.5 saturates them (~0.9–1.0). Real CADGenBench drawings
+are the opposite: fixture 125's title block literally reads *"deliberately
+departs from drafting standards."* Their difficulty is largely in **reading and
+inference** — derived, chained, off-datum, angular dimensions — not exotic
+geometry.
+
+**9011 / 9013** isolate that axis. Both are the *same* shelled cover; only the
+drawing differs. 9011 states the body height directly (38); 9013 states the
+overall height (48) and boss height (10) and forces the reader to derive the
+body (48 − 10). On identical geometry GPT-5.5 scores **~0.93** on 9011 and
+**~0.63** on 9013 (n=3 each, near-zero variance) — it mis-reads the overall as
+the body height and builds a 58-tall part. A ~0.30 swing from one dimensioning
+change: the lever for a discriminating dev set is dimension *inference*, not
+geometry. Author such fixtures with the declarative `author()` hook, which lets
+you choose exactly which dimensions are stated vs. inferred.
+
 ## Notes
 
 - The scorer pins `cadgenbench` to the commit the Space used at build time

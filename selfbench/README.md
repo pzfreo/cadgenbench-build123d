@@ -95,6 +95,17 @@ change: the lever for a discriminating dev set is dimension *inference*, not
 geometry. Author such fixtures with the declarative `author()` hook, which lets
 you choose exactly which dimensions are stated vs. inferred.
 
+**9016** applies the same inference class to a differently proportioned
+pedestal housing. Its drawing states the overall and boss heights, requiring
+the body height to be derived while the deep underside cavity and visible roof
+are reconciled. It provides an independent check against overfitting the
+specific values and geometry of 9011/9013.
+
+**9017** extends that check to a three-level height chain: overall height minus
+base flange and top boss. It adds a deep cored body, counterbored central bore,
+and four-hole rectangular mounting pattern so success requires both correct
+dimension inference and a substantially richer feature inventory.
+
 ## Notes
 
 - The scorer pins `cadgenbench` to the commit the Space used at build time

@@ -8,6 +8,7 @@ WORK="${2:?work dir}"
 MODEL="${3:-claude-opus-5}"
 MCP_SPEC="${4:-none}"
 EXEC_TIMEOUT="${5:-}"
+PROMPT_STYLE="${CGB_PROMPT_STYLE:-tuned-nomcp}"
 
 [[ "$MCP_SPEC" == "none" ]] || { echo "ERROR: no-MCP driver requires mcp_spec=none"; exit 1; }
 MODEL_EFFORT=""
@@ -32,7 +33,9 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/cgb_nomcp.XXXXXX")"
 trap 'cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
 OUT="$WORK/output.step"
-cp "$FIX/input.png" "$WORK/input.png"
+for image in "$FIX"/*.png; do
+  [[ -f "$image" ]] && cp "$image" "$WORK/"
+done
 if [[ -f "$FIX/edit_description.txt" ]]; then
   cp "$FIX/input.step" "$WORK/input.step"
   cp "$FIX/edit_description.txt" "$WORK/edit_description.txt"
@@ -44,12 +47,32 @@ else
   sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation_nomcp.txt" > "$WORK/prompt.txt"
   TASK=generation
 fi
+
+SYSTEM_PROMPT_ARGS=()
+if [[ "$PROMPT_STYLE" == "official-baseline" ]]; then
+  python3 "$HERE/render_official_baseline_prompt.py" > "$WORK/system_prompt.txt"
+  python3 - "$FIX/description.yaml" "$TASK" > "$WORK/prompt.txt" <<'PY'
+from pathlib import Path
+import re, sys
+
+text = Path(sys.argv[1]).read_text()
+match = re.search(r"(?ms)^description:\s*(?:[>|][-+]?\s*)?\n?(.*?)(?=^\S|\Z)", text)
+description = " ".join(line.strip() for line in match.group(1).splitlines()) if match else text.strip()
+if sys.argv[2] == "generation":
+    print(description)
+    print("\nThe engineering drawing is available as `input.png` in the working directory.")
+else:
+    print(description)
+    print("\nThe starting STEP file `input.step` is in the working directory. Load it with `import_step(...)`, apply the requested edit, and export `output.step`.")
+PY
+  SYSTEM_PROMPT_ARGS=(--system-prompt "$(cat "$WORK/system_prompt.txt")")
+fi
 printf '%s\n' '{"mcpServers":{}}' > "$WORK/mcp_config.json"
 
 uv venv --python 3.12 "$WORK/.venv" >/dev/null
 uv pip install --python "$WORK/.venv/bin/python" 'build123d==0.11.1' pillow trimesh >/dev/null
 
-echo "fixture: $FIX  ($TASK, direct build123d; NO MCP)"
+echo "fixture: $FIX  ($TASK, direct build123d; NO MCP; prompt=$PROMPT_STYLE)"
 echo "work:    $WORK"
 echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<default>}"
 echo "running claude -p without MCP configuration ..."
@@ -58,6 +81,7 @@ cd "$WORK"
 "$CLAUDE_BIN" -p "$(cat prompt.txt)" \
   --model "$MODEL" \
   ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
+  ${SYSTEM_PROMPT_ARGS[@]+"${SYSTEM_PROMPT_ARGS[@]}"} \
   --output-format stream-json --verbose \
   --mcp-config mcp_config.json \
   --strict-mcp-config \

@@ -115,6 +115,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
   "timestamp_utc": "$TS",
   "model": "$MODEL_ID",
   "reasoning_effort": "$REASONING_EFFORT",
+  "prompt_style": "${CGB_PROMPT_STYLE:-default}",
   "mcp_spec": "$MCP_SPEC",
   "mcp_version": "$MCP_VERSION",
   "exec_timeout": "${EXEC_TIMEOUT:-default}",

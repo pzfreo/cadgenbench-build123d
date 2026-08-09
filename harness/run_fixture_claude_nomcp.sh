@@ -10,11 +10,6 @@ MCP_SPEC="${4:-none}"
 EXEC_TIMEOUT="${5:-}"
 
 [[ "$MCP_SPEC" == "none" ]] || { echo "ERROR: no-MCP driver requires mcp_spec=none"; exit 1; }
-if [[ -f "$FIX/edit_description.txt" ]]; then
-  echo "ERROR: no-MCP ablation driver currently supports generation fixtures only"
-  exit 1
-fi
-
 MODEL_EFFORT=""
 case "$MODEL" in
   *:*) MODEL_EFFORT="${MODEL##*:}"; MODEL="${MODEL%%:*}" ;;
@@ -36,15 +31,25 @@ REAL_WORK="$(cd "$REAL_WORK" && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cgb_nomcp.XXXXXX")"
 trap 'cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
-cp "$FIX/input.png" "$WORK/input.png"
 OUT="$WORK/output.step"
-sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation_nomcp.txt" > "$WORK/prompt.txt"
+cp "$FIX/input.png" "$WORK/input.png"
+if [[ -f "$FIX/edit_description.txt" ]]; then
+  cp "$FIX/input.step" "$WORK/input.step"
+  cp "$FIX/edit_description.txt" "$WORK/edit_description.txt"
+  cp -R "$FIX/renders" "$WORK/renders" 2>/dev/null || true
+  python3 -c "import pathlib,sys; t=pathlib.Path(sys.argv[1]).read_text(); print(t.replace('{EDIT}', pathlib.Path(sys.argv[2]).read_text().strip()).replace('{OUTPUT}', sys.argv[3]), end='')" \
+    "$HERE/prompt_editing_nomcp.txt" "$FIX/edit_description.txt" "$OUT" > "$WORK/prompt.txt"
+  TASK=editing
+else
+  sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation_nomcp.txt" > "$WORK/prompt.txt"
+  TASK=generation
+fi
 printf '%s\n' '{"mcpServers":{}}' > "$WORK/mcp_config.json"
 
 uv venv --python 3.12 "$WORK/.venv" >/dev/null
 uv pip install --python "$WORK/.venv/bin/python" 'build123d==0.11.1' pillow trimesh >/dev/null
 
-echo "fixture: $FIX  (generation, direct build123d; NO MCP)"
+echo "fixture: $FIX  ($TASK, direct build123d; NO MCP)"
 echo "work:    $WORK"
 echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<default>}"
 echo "running claude -p without MCP configuration ..."

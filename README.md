@@ -68,8 +68,8 @@ Reported comparisons should always use an exact version; a moving `@latest`
 spec can silently change the build123d-mcp code between runs.
 
 For a Claude direct-build123d ablation with no MCP server, pass `none` as the
-MCP spec. The separate ablation driver supports generation fixtures and gives
-Claude only file/shell tools plus a pinned build123d environment:
+MCP spec. The separate ablation driver gives Claude only file/shell tools plus
+a pinned build123d environment and supports both generation and editing:
 
 ```bash
 ./run_sweep.sh selfbench/selfbench.txt opus5-nomcp-selfbench-r1 \

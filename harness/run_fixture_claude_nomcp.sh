@@ -30,7 +30,15 @@ REAL_WORK="$WORK"
 mkdir -p "$REAL_WORK"
 REAL_WORK="$(cd "$REAL_WORK" && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cgb_nomcp.XXXXXX")"
-trap 'cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true; rm -rf "$WORK"' EXIT
+cleanup_fixture() {
+  cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true
+  # The per-fixture venv is fully reproducible and ~670 MB. Keeping a copy for
+  # every fixture exhausts the workspace during full sweeps; retain scripts,
+  # traces and artifacts, but discard only this dependency cache.
+  rm -rf "$REAL_WORK/.venv"
+  rm -rf "$WORK"
+}
+trap cleanup_fixture EXIT
 
 OUT="$WORK/output.step"
 for image in "$FIX"/*.png; do

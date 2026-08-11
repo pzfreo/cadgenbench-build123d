@@ -100,9 +100,15 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
         if commit and commit != "unknown"
         else "https://github.com/pzfreo/cadgenbench-build123d"
     )
+    if mcp_version == "none":
+        system_desc = f"Model {model_desc} + direct build123d/Python (no MCP server)"
+    else:
+        system_desc = (
+            f"Model {model_desc} + build123d-mcp {mcp_version} "
+            "(gate-equipped MCP server)"
+        )
     notes = (
-        f"Model {model_desc} + build123d-mcp {mcp_version} (gate-equipped MCP server). "
-        f"Harness + prompts: cadgenbench-build123d @ {commit[:12]}. "
+        f"{system_desc}. Harness + prompts: cadgenbench-build123d @ {commit[:12]}. "
         f"{n_out}/{len(ids)} fixtures produced."
     )[:500]
     meta = {

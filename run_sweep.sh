@@ -43,9 +43,10 @@ if [[ "${1:-}" == "--one" ]]; then
   # Pick the agent driver by model id: claude-* -> Claude Code, anything else
   # (e.g. gpt-5.5) -> Codex CLI. Both drivers take the same args and produce the
   # same output.step / stream.jsonl / filtered.log layout.
-  case "$MODEL" in
-    claude*|"") DRIVER="run_fixture.sh";      FILTER="stream_filter.py" ;;
-    *)          DRIVER="run_fixture_codex.sh"; FILTER="stream_filter_codex.py" ;;
+  case "$MODEL:$MCP_SPEC" in
+    claude*:none|:none) DRIVER="run_fixture_claude_nomcp.sh"; FILTER="stream_filter.py" ;;
+    claude*:*)          DRIVER="run_fixture.sh";              FILTER="stream_filter.py" ;;
+    *)                   DRIVER="run_fixture_codex.sh";       FILTER="stream_filter_codex.py" ;;
   esac
   "$HERE/harness/$DRIVER" "$IN" "$WORK" "$MODEL" "$MCP_SPEC" "$EXEC_TIMEOUT" \
         > "$WORKROOT/${fid}.driver.log" 2>&1 || echo "[$fid] run_fixture returned nonzero"
@@ -102,14 +103,19 @@ fi
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 FIX_JSON="$(printf '%s\n' "$FIXES" | awk 'NF{if(c++)printf ",";printf "\"%s\"",$0}')"
 # Resolve the spec to the actual installed version so provenance records what ran.
-MCP_VERSION="$(uv tool run --python 3.12 "$MCP_SPEC" --version 2>/dev/null | awk '{print $NF}' || true)"
-[[ -n "$MCP_VERSION" ]] || MCP_VERSION="unknown"
+if [[ "$MCP_SPEC" == "none" ]]; then
+  MCP_VERSION="none"
+else
+  MCP_VERSION="$(uv tool run --python 3.12 "$MCP_SPEC" --version 2>/dev/null | awk '{print $NF}' || true)"
+  [[ -n "$MCP_VERSION" ]] || MCP_VERSION="unknown"
+fi
 cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 {
   "run": "$RUN",
   "timestamp_utc": "$TS",
   "model": "$MODEL_ID",
   "reasoning_effort": "$REASONING_EFFORT",
+  "prompt_style": "${CGB_PROMPT_STYLE:-default}",
   "mcp_spec": "$MCP_SPEC",
   "mcp_version": "$MCP_VERSION",
   "exec_timeout": "${EXEC_TIMEOUT:-default}",

@@ -74,6 +74,25 @@ efficient. The 70 fully paired raw records show 23.5% lower API-equivalent
 cost, 34.8% fewer output tokens, and 40.1% less elapsed time with MCP. The
 recovered 79-fixture aggregate supports the same conclusion.
 
+The official submitted geometry reports also show that the additional no-MCP
+consumption did not produce a higher overall benchmark score:
+
+| Submitted metric | No MCP | MCP | Difference (MCP - no MCP) |
+|---|---:|---:|---:|
+| Benchmark score | 0.627 | 0.639 | +0.012 |
+| Validity | 75/81 (92.6%) | 80/81 (98.8%) | +5 valid outputs |
+| Generation score | 0.631 | 0.596 | -0.035 |
+| Editing score | 0.621 | 0.706 | +0.085 |
+
+Sources: [official-baseline/no-MCP report](https://huggingai4engineering-cadgenbench.hf.space/reports/pzfreo_opus5-xhigh-official-baseline-prompt-nom_20260811-034944.html)
+and [build123d-MCP report](https://huggingai4engineering-cadgenbench.hf.space/reports/pzfreo_build123d-mcp-v0381-claude-opus-5-xhigh-_20260807-101147.html).
+
+MCP's overall advantage is 0.012 score points and 6.2 percentage points of
+validity. The category split is important: no MCP scores 0.035 higher on
+generation, while MCP scores 0.085 higher on editing. Consequently the result
+supports MCP for the tested end-to-end configuration, especially for editing;
+it does not establish that MCP improves every task category.
+
 This is a comparison of the complete run configurations, not a perfectly
 isolated causal estimate of MCP alone: the MCP and official-baseline harnesses
 also differ in prompt and tool interface. Geometry scores should be evaluated

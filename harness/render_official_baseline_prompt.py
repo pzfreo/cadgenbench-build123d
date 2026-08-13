@@ -20,7 +20,7 @@ UPSTREAM_COMMIT = "33304cf771fc5639144b1df9611e347251052cf8"
 RAW_ROOT = f"https://raw.githubusercontent.com/huggingface/cadgenbench/{UPSTREAM_COMMIT}/src/cadgenbench/baseline"
 FILES = ("prompt.py", "build123d_cheat_sheet.md", "cadquery_cheat_sheet.md")
 
-ADAPTER = """
+DIRECT_ADAPTER = """
 ## Claude Code harness transport adapter
 
 This experiment runs the official prompt through Claude Code using the user's
@@ -36,8 +36,35 @@ executor's automatic validation/render feedback is not injected, so perform
 those checks yourself. You must leave the final artifact at `output.step`.
 """.strip()
 
+MINIMAL_MCP_ADAPTER = """
+## Claude Code harness transport adapter
+
+This experiment runs the official prompt through Claude Code using the user's
+Claude Code subscription. The engineering drawing is `input.png` in the current
+working directory. Use Read to inspect it and Write/Edit to maintain your Python
+candidate in `model.py`.
+
+Near the start, call `prepare_drawing(image_path="input.png")` once and inspect
+its labelled overview and relevant crops instead of scripting repetitive basic
+crop generation. Its regions are spatial evidence only, not interpreted CAD
+features; you remain responsible for reading dimensions and understanding form.
+When a particular callout or profile remains ambiguous, use `crop_drawing` for
+one exact enlarged region. Use `calibrate_drawing` only when printed dimensions
+provide trustworthy point correspondences within the same orthographic view;
+never calibrate an isometric view or treat pixel scale as stronger evidence than
+a printed dimension.
+
+Use the available build123d MCP tools only as execution instruments: promote a
+candidate with execute_file, inspect it when useful with measure, render_view, or
+cross_sections, check it with validate, and write the final artifact to
+`output.step` with export.
+You choose the modelling strategy, verification sequence, revisions, and stopping
+point. No additional CAD workflow or modelling skill is imposed.
+""".strip()
+
 
 def main() -> None:
+    adapter = MINIMAL_MCP_ADAPTER if "--minimal-mcp" in sys.argv[1:] else DIRECT_ADAPTER
     cache = Path(__file__).resolve().parent / ".official_baseline_prompt" / UPSTREAM_COMMIT
     cache.mkdir(parents=True, exist_ok=True)
     for name in FILES:
@@ -52,7 +79,7 @@ def main() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     sys.stdout.write(module.assemble_system_prompt("build123d"))
-    sys.stdout.write("\n\n" + ADAPTER + "\n")
+    sys.stdout.write("\n\n" + adapter + "\n")
 
 
 if __name__ == "__main__":

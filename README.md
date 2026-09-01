@@ -40,7 +40,8 @@ on the right side of the line:
 ## Prerequisites
 
 - `claude` (Claude Code) and `uv` on `PATH`. For the Codex/GPT-5.5 path,
-  a logged-in `codex` CLI (`codex login`) too.
+  a logged-in `codex` CLI (`codex login`) too. For google/* models through
+  Vercel AI Gateway, export `AI_GATEWAY_API_KEY` as well.
 
 ## Run a sweep
 
@@ -147,6 +148,53 @@ Codex has no per-call tool allowlist, so the model sees all of build123d-mcp's
 tools (the Claude driver curates a 17-tool subset); and the prompts' "read
 `input.png`" / zoom-crop guidance is satisfied via `-i` + `view_image` rather
 than Claude Code's `Read` + `Bash`-crop. The prompts themselves are unchanged.
+
+## Third system: Google Antigravity CLI (Agy)
+
+Prefix an Agy model slug with `agy/` to use Antigravity's native agent and MCP
+stack. Each fixture uses two headless turns in one conversation: Plan mode
+inspects the fixture files and drawing, then an autonomous accept-edits turn
+resumes that exact conversation and executes the plan. Six fixtures can run as
+six independent Agy conversations in parallel.
+
+```bash
+./run_sweep.sh splits/gemini37-flash-smoke6.txt agy-gemini37-high-plan \
+    agy/gemini-3.7-flash-high build123d-mcp==0.3.83 6 240
+```
+
+`run_sweep.sh` pins the selected MCP command in Agy's user-level `build123d`
+server entry before fan-out. The driver records the Agy version, model, effort,
+native MCP transport, and `plan-then-accept-edits` mode in `run_meta.json`.
+Raw events use Agy's JSONL format and can be watched with:
+
+```bash
+tail -n0 -f work/agy-gemini37-high-plan/<id>_run/stream.jsonl \
+    | python3 harness/stream_filter_agy.py work/agy-gemini37-high-plan/<id>_run
+```
+
+### Gemini through Codex + Vercel AI Gateway
+
+`google/*` model ids reuse the Codex driver and its MCP/image orchestration but
+route Responses API traffic through Vercel AI Gateway's Codex compatibility
+endpoint. The gateway configuration is passed inline for each run, so it does
+not modify or depend on the default provider in `~/.codex/config.toml`.
+
+```bash
+export AI_GATEWAY_API_KEY="..."
+./run_sweep.sh splits/gemini37-flash-smoke6.txt gemini37-flash-v1 \
+    google/gemini-3.7-flash:medium build123d-mcp==0.3.83 1 240
+```
+
+The model id, reasoning effort, agent driver, gateway provider/endpoint, MCP
+version, and harness commit are recorded in `run_meta.json`. Gemini 3.7 Flash
+supports `low`, `medium`, and `high` reasoning effort; do not use `xhigh`.
+
+Current Codex releases serialize MCP tools with an OpenAI-specific namespace
+wrapper that non-OpenAI Responses providers do not expand. For `google/*` runs,
+the driver starts a loopback-only compatibility proxy which flattens only the
+`build123d` namespace into standard Responses function tools and maps calls back
+before Codex dispatches them. The proxy never logs request bodies, headers, or
+credentials; `run_meta.json` records `mcp_tool_transport` and the Codex version.
 
 ## Validate / package the submission
 

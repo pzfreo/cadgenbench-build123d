@@ -79,6 +79,19 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
         if effort and effort != "config-default"
         else model
     )
+    provider = rm.get("model_provider")
+    driver = rm.get("agent_driver")
+    if provider == "vercel-ai-gateway":
+        provider_desc = " via Codex CLI + Vercel AI Gateway"
+    elif driver == "antigravity-cli":
+        agy_version = rm.get("agy_cli_version", "unknown")
+        agent_mode = rm.get("agent_mode", "default")
+        provider_desc = (
+            f" via Google Antigravity CLI {agy_version} "
+            f"({agent_mode})"
+        )
+    else:
+        provider_desc = ""
     mcp_version = (
         rm.get("mcp_version")
         or manifest.get("resolved_versions", {}).get("build123d_mcp")
@@ -101,10 +114,10 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
         else "https://github.com/pzfreo/cadgenbench-build123d"
     )
     if mcp_version == "none":
-        system_desc = f"Model {model_desc} + direct build123d/Python (no MCP server)"
+        system_desc = f"Model {model_desc}{provider_desc} + direct build123d/Python (no MCP server)"
     else:
         system_desc = (
-            f"Model {model_desc} + build123d-mcp {mcp_version} "
+            f"Model {model_desc}{provider_desc} + build123d-mcp {mcp_version} "
             "(gate-equipped MCP server)"
         )
     notes = (

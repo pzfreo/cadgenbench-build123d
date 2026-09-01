@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Codex / GPT-5.5 counterpart of run_fixture.sh: run one drawing->solid fixture
 # through the Codex CLI + the same gate-equipped build123d-mcp, producing the same
-# output.step + stream.jsonl + filtered.log layout. Same arg interface as the
-# Claude driver so run_sweep.sh can dispatch to either by model id.
+# output.step + stream.jsonl + filtered.log layout. google/* model ids use Vercel
+# AI Gateway's Codex compatibility endpoint; other ids use Codex's configured
+# provider. Same arg interface as the Claude driver so run_sweep.sh can dispatch
+# to either by model id.
 #
 # Usage:
 #   harness/run_fixture_codex.sh <fixture_input_dir> <work_dir> [model] [mcp_spec] [exec_timeout]
@@ -34,6 +36,32 @@ case "$MODEL" in
   *:*) MODEL_EFFORT="${MODEL##*:}"; MODEL="${MODEL%%:*}" ;;
 esac
 
+# Vercel exposes Gemini and other non-OpenAI models through a Codex-specific
+# Responses compatibility endpoint. Keep this run-scoped: inline config avoids
+# changing ~/.codex/config.toml or rerouting unrelated Codex sessions. The key
+# must already be exported; never read or copy secrets into the work directory.
+PROVIDER_ARGS=()
+MODEL_PROVIDER="codex-config-default"
+USE_VERCEL_MCP_PROXY=false
+case "$MODEL" in
+  google/*)
+    [[ -n "${AI_GATEWAY_API_KEY:-}" ]] || {
+      echo "ERROR: google/* models require AI_GATEWAY_API_KEY in the environment"
+      exit 1
+    }
+    MODEL_PROVIDER="vercel-ai-gateway"
+    USE_VERCEL_MCP_PROXY=true
+    PROVIDER_ARGS=(
+      --ignore-user-config
+      -c 'model_provider="vercel"'
+      -c "model_catalog_json=\"$HERE/gemini37_flash_model_catalog.json\""
+      -c 'model_providers.vercel.name="Vercel AI Gateway"'
+      -c 'model_providers.vercel.env_key="AI_GATEWAY_API_KEY"'
+      -c 'model_providers.vercel.wire_api="responses"'
+    )
+    ;;
+esac
+
 command -v codex >/dev/null || { echo "ERROR: 'codex' (Codex CLI) not on PATH"; exit 1; }
 command -v uv    >/dev/null || { echo "ERROR: 'uv' not on PATH"; exit 1; }
 
@@ -52,7 +80,16 @@ REAL_WORK="$WORK"
 mkdir -p "$REAL_WORK"
 REAL_WORK="$(cd "$REAL_WORK" && pwd)"   # absolute: the run cd's into the sandbox, so the trap needs a fixed path
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cgb_fixture.XXXXXX")"
-trap 'cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true; rm -rf "$WORK"' EXIT
+PROXY_PID=""
+cleanup() {
+  if [[ -n "$PROXY_PID" ]]; then
+    kill -TERM "$PROXY_PID" 2>/dev/null || true
+    wait "$PROXY_PID" 2>/dev/null || true
+  fi
+  cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 mkdir -p "$WORK"
 rm -f "$WORK/output.step" "$WORK/stream.jsonl" "$WORK/filtered.log"
@@ -88,9 +125,34 @@ else
   [[ -f "$WORK/input.png" ]] && IMG_ARGS+=(-i "$WORK/input.png")
 fi
 
+# Codex 0.152 emits MCP tools in an OpenAI-specific namespace wrapper. Vercel's
+# provider translation accepts standard Responses function tools, so a
+# loopback-only shim flattens the build123d namespace on requests and restores
+# it on tool-call responses. It does not log bodies, headers, or credentials.
+if [[ "$USE_VERCEL_MCP_PROXY" == true ]]; then
+  command -v node >/dev/null || { echo "ERROR: Vercel MCP compatibility requires node"; exit 1; }
+  PROXY_PORT_FILE="$WORK/vercel_proxy.port"
+  PROXY_LOG="$WORK/vercel_proxy.log"
+  node "$HERE/vercel_codex_mcp_proxy.mjs" \
+    --port-file "$PROXY_PORT_FILE" --log-file "$PROXY_LOG" &
+  PROXY_PID=$!
+  for _ in {1..200}; do
+    [[ -s "$PROXY_PORT_FILE" ]] && break
+    kill -0 "$PROXY_PID" 2>/dev/null || break
+    sleep 0.05
+  done
+  [[ -s "$PROXY_PORT_FILE" ]] || { echo "ERROR: Vercel MCP compatibility proxy failed to start"; exit 1; }
+  PROXY_PORT="$(tr -d '\n' < "$PROXY_PORT_FILE")"
+  PROVIDER_ARGS+=(
+    -c "model_providers.vercel.base_url=\"http://127.0.0.1:$PROXY_PORT\""
+  )
+fi
+
 echo "fixture: $FIX  ($TASK)"
 echo "work:    $WORK"
-echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<config default>}    mcp: $MCP_SPEC  exec-timeout: ${EXEC_TIMEOUT:-<default 120s>}  (--no-sandbox)"
+echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<config default>}    provider: $MODEL_PROVIDER"
+echo "mcp:     $MCP_SPEC  exec-timeout: ${EXEC_TIMEOUT:-<default 120s>}  (--no-sandbox)"
+[[ "$USE_VERCEL_MCP_PROXY" == true ]] && echo "mcp wire: flat Responses functions via loopback compatibility proxy"
 echo "images:  ${IMG_ARGS[*]:-<none>}"
 echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter_codex.py $WORK"
 echo "running codex exec ..."
@@ -122,6 +184,7 @@ MCP_ARGS_JSON="\"tool\",\"run\",\"--python\",\"3.12\",\"$MCP_SPEC\",\"--no-sandb
 codex exec \
   --model "$MODEL" \
   ${MODEL_EFFORT:+-c model_reasoning_effort="$MODEL_EFFORT"} \
+  "${PROVIDER_ARGS[@]}" \
   --cd "$WORK" \
   --skip-git-repo-check \
   --dangerously-bypass-approvals-and-sandbox \

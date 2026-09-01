@@ -9,8 +9,9 @@
 #   fixtures_file : one fixture id per line (# comments and blanks ignored)
 #   run_name      : names the work/ and results/ subdirectory for this sweep
 #   model         : agent model id             (default: claude-opus-4-8).
-#                   claude-* routes to Claude Code; any other id (e.g. gpt-5.5)
-#                   routes to the Codex CLI driver. Both produce one output.step.
+#                   claude-* routes to Claude Code; agy/* routes to Google
+#                   Antigravity CLI; google/* routes through Codex + Vercel;
+#                   any other id routes to the Codex CLI. All produce one STEP.
 #   mcp_spec      : build123d-mcp spec for uv tool run (default: build123d-mcp==0.3.81;
 #                   pass "build123d-mcp @ file:///path" to test a local build)
 #   jobs          : fixtures to run concurrently (default 4). Each fixture has
@@ -24,8 +25,7 @@
 # Watch one fixture live:
 #   tail -n0 -f work/<run>/<id>_run/stream.jsonl | python3 harness/stream_filter.py work/<run>/<id>_run
 #
-# Requires: uv, and the agent CLI for your chosen model — claude (Claude
-# Code) for claude-* models, or codex (Codex CLI, logged in) for others.
+# Requires: uv and the selected agent CLI: claude, agy, or codex.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -40,12 +40,12 @@ if [[ "${1:-}" == "--one" ]]; then
         > "$WORKROOT/${fid}.fetch.log" 2>&1; then
     echo "[$fid] FETCH FAILED (see work/$RUN/${fid}.fetch.log)"; exit 0
   fi
-  # Pick the agent driver by model id: claude-* -> Claude Code, anything else
-  # (e.g. gpt-5.5) -> Codex CLI. Both drivers take the same args and produce the
-  # same output.step / stream.jsonl / filtered.log layout.
+  # Pick the agent driver by model id. All drivers share the same arguments and
+  # output.step / stream.jsonl / filtered.log layout.
   case "$MODEL:$MCP_SPEC" in
     claude*:none|:none) DRIVER="run_fixture_claude_nomcp.sh"; FILTER="stream_filter.py" ;;
     claude*:*)          DRIVER="run_fixture.sh";              FILTER="stream_filter.py" ;;
+    agy/*:*)            DRIVER="run_fixture_agy.sh";          FILTER="stream_filter_agy.py" ;;
     *)                   DRIVER="run_fixture_codex.sh";       FILTER="stream_filter_codex.py" ;;
   esac
   "$HERE/harness/$DRIVER" "$IN" "$WORK" "$MODEL" "$MCP_SPEC" "$EXEC_TIMEOUT" \
@@ -85,6 +85,52 @@ MODEL_ID="$MODEL"
 case "$MODEL" in
   *:*) REASONING_EFFORT="${MODEL##*:}"; MODEL_ID="${MODEL%%:*}" ;;
 esac
+case "$MODEL_ID" in
+  agy/*-low)    REASONING_EFFORT="low" ;;
+  agy/*-medium) REASONING_EFFORT="medium" ;;
+  agy/*-high)   REASONING_EFFORT="high" ;;
+esac
+
+# Provider/driver are part of the scored system. google/* models use the
+# Vercel AI Gateway's Codex compatibility endpoint in run_fixture_codex.sh;
+# other Codex models retain the user's configured provider.
+case "$MODEL_ID" in
+  claude-*)
+    AGENT_DRIVER="claude-code"
+    MODEL_PROVIDER="claude-code-default"
+    PROVIDER_ENDPOINT="default"
+    ;;
+  agy/*)
+    AGENT_DRIVER="antigravity-cli"
+    MODEL_PROVIDER="google-antigravity"
+    PROVIDER_ENDPOINT="antigravity-managed"
+    MODEL_ID="${MODEL_ID#agy/}"
+    MCP_TOOL_TRANSPORT="native-mcp-dispatch"
+    ;;
+  google/*)
+    AGENT_DRIVER="codex-cli"
+    MODEL_PROVIDER="vercel-ai-gateway"
+    PROVIDER_ENDPOINT="https://ai-gateway.vercel.sh/codex/v1"
+    MCP_TOOL_TRANSPORT="namespace-flatten-proxy"
+    ;;
+  *)
+    AGENT_DRIVER="codex-cli"
+    MODEL_PROVIDER="codex-config-default"
+    PROVIDER_ENDPOINT="default"
+    MCP_TOOL_TRANSPORT="native"
+    ;;
+esac
+[[ -n "${MCP_TOOL_TRANSPORT:-}" ]] || MCP_TOOL_TRANSPORT="native"
+CODEX_CLI_VERSION="not-applicable"
+AGY_CLI_VERSION="not-applicable"
+if [[ "$AGENT_DRIVER" == "codex-cli" ]]; then
+  CODEX_CLI_VERSION="$(codex --version 2>/dev/null | awk '{print $NF}' || true)"
+  [[ -n "$CODEX_CLI_VERSION" ]] || CODEX_CLI_VERSION="unknown"
+fi
+if [[ "$AGENT_DRIVER" == "antigravity-cli" ]]; then
+  AGY_CLI_VERSION="$(agy --version 2>/dev/null || true)"
+  [[ -n "$AGY_CLI_VERSION" ]] || AGY_CLI_VERSION="unknown"
+fi
 
 mkdir -p "$HERE/work/$RUN" "$HERE/results/$RUN"
 FIXES="$(sed 's/#.*//' "$LIST" | tr -d '[:blank:]' | grep -E '^[0-9]+$' || true)"
@@ -109,12 +155,29 @@ else
   MCP_VERSION="$(uv tool run --python 3.12 "$MCP_SPEC" --version 2>/dev/null | awk '{print $NF}' || true)"
   [[ -n "$MCP_VERSION" ]] || MCP_VERSION="unknown"
 fi
+
+# Agy currently stores MCP servers in its user-level configuration. Configure
+# the exact pinned command once before the parallel fan-out; individual workers
+# only start their own isolated stdio server processes.
+if [[ "$AGENT_DRIVER" == "antigravity-cli" ]]; then
+  command -v agy >/dev/null || { echo "ERROR: 'agy' not on PATH"; exit 1; }
+  AGY_MCP_ARGS=(mcp add build123d uv tool run --python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
+  [[ -n "$EXEC_TIMEOUT" ]] && AGY_MCP_ARGS+=(--exec-timeout "$EXEC_TIMEOUT")
+  agy "${AGY_MCP_ARGS[@]}" >/dev/null || { echo "ERROR: could not configure Agy build123d MCP"; exit 1; }
+fi
 cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 {
   "run": "$RUN",
   "timestamp_utc": "$TS",
   "model": "$MODEL_ID",
   "reasoning_effort": "$REASONING_EFFORT",
+  "agent_driver": "$AGENT_DRIVER",
+  "model_provider": "$MODEL_PROVIDER",
+  "provider_endpoint": "$PROVIDER_ENDPOINT",
+  "codex_cli_version": "$CODEX_CLI_VERSION",
+  "agy_cli_version": "$AGY_CLI_VERSION",
+  "agent_mode": "$([[ "$AGENT_DRIVER" == "antigravity-cli" ]] && echo plan-then-accept-edits || echo single-turn)",
+  "mcp_tool_transport": "$MCP_TOOL_TRANSPORT",
   "prompt_style": "${CGB_PROMPT_STYLE:-default}",
   "mcp_spec": "$MCP_SPEC",
   "mcp_version": "$MCP_VERSION",
@@ -128,7 +191,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 JSON
 [[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
 
-echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, mcp=$MCP_SPEC, exec-timeout=${EXEC_TIMEOUT:-default}"
+echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, provider=$MODEL_PROVIDER, mcp=$MCP_SPEC, exec-timeout=${EXEC_TIMEOUT:-default}"
 echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION -> results/$RUN/run_meta.json"
 echo
 

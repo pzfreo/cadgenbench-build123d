@@ -155,7 +155,9 @@ Prefix an Agy model slug with `agy/` to use Antigravity's native agent and MCP
 stack. Each fixture uses two headless turns in one conversation: Plan mode
 inspects the fixture files and drawing, then an autonomous accept-edits turn
 resumes that exact conversation and executes the plan. Six fixtures can run as
-six independent Agy conversations in parallel.
+six independent Agy conversations in parallel. Both turns enable Agy's terminal
+sandbox so file and shell discovery cannot escape the isolated fixture workspace;
+the separately configured build123d MCP subprocess remains available for CAD.
 
 ```bash
 ./run_sweep.sh splits/gemini37-flash-smoke6.txt agy-gemini37-high-plan \

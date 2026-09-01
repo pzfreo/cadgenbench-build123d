@@ -79,6 +79,7 @@ agy --print "$PLAN_INSTRUCTION
 $PROMPT_TEXT" \
   --mode plan \
   --dangerously-skip-permissions \
+  --sandbox \
   --add-dir "$WORK" \
   --model "$MODEL" \
   "${EFFORT_ARGS[@]}" \
@@ -100,6 +101,7 @@ agy --print "$EXECUTE_INSTRUCTION" \
   --conversation "$CONVERSATION_ID" \
   --mode accept-edits \
   --dangerously-skip-permissions \
+  --sandbox \
   --add-dir "$WORK" \
   --model "$MODEL" \
   "${EFFORT_ARGS[@]}" \

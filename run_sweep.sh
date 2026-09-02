@@ -99,6 +99,8 @@ case "$MODEL_ID" in
     AGENT_DRIVER="claude-code"
     MODEL_PROVIDER="claude-code-default"
     PROVIDER_ENDPOINT="default"
+    MCP_TOOL_TRANSPORT="persistent-loopback-http"
+    AGENT_MODE="single-turn-quota-resumable"
     ;;
   agy/*)
     AGENT_DRIVER="antigravity-cli"
@@ -121,6 +123,7 @@ case "$MODEL_ID" in
     ;;
 esac
 [[ -n "${MCP_TOOL_TRANSPORT:-}" ]] || MCP_TOOL_TRANSPORT="native"
+[[ -n "${AGENT_MODE:-}" ]] || AGENT_MODE="$([[ "$AGENT_DRIVER" == "antigravity-cli" ]] && echo plan-then-accept-edits || echo single-turn)"
 CODEX_CLI_VERSION="not-applicable"
 AGY_CLI_VERSION="not-applicable"
 if [[ "$AGENT_DRIVER" == "codex-cli" ]]; then
@@ -157,8 +160,9 @@ else
 fi
 
 # Agy currently stores MCP servers in its user-level configuration. Configure
-# the exact pinned command once before the parallel fan-out; individual workers
-# only start their own isolated stdio server processes.
+# the exact pinned command once before the parallel fan-out; individual Agy
+# workers then start their own isolated stdio server processes. Claude workers
+# instead use the fixture-local persistent HTTP server in run_fixture.sh.
 if [[ "$AGENT_DRIVER" == "antigravity-cli" ]]; then
   command -v agy >/dev/null || { echo "ERROR: 'agy' not on PATH"; exit 1; }
   AGY_MCP_ARGS=(mcp add build123d uv tool run --python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
@@ -176,7 +180,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
   "provider_endpoint": "$PROVIDER_ENDPOINT",
   "codex_cli_version": "$CODEX_CLI_VERSION",
   "agy_cli_version": "$AGY_CLI_VERSION",
-  "agent_mode": "$([[ "$AGENT_DRIVER" == "antigravity-cli" ]] && echo plan-then-accept-edits || echo single-turn)",
+  "agent_mode": "$AGENT_MODE",
   "mcp_tool_transport": "$MCP_TOOL_TRANSPORT",
   "prompt_style": "${CGB_PROMPT_STYLE:-default}",
   "mcp_spec": "$MCP_SPEC",

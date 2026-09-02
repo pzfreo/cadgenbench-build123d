@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Deterministic Claude CLI double for the quota-resume integration test. The
+# first call opens a resumable session and rejects at quota; the second must
+# resume that exact session and produces the requested artifact.
+if [[ ! -f .fake_claude_quota_seen ]]; then
+  : > .fake_claude_quota_seen
+  reset=$(( $(date +%s) + 1 ))
+  printf '%s\n' '{"type":"system","subtype":"init","session_id":null}'
+  printf '%s\n' "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":$reset,\"rateLimitType\":\"five_hour\"},\"session_id\":\"quota-test-session\"}"
+  printf '%s\n' '{"type":"result","subtype":"success","is_error":true,"result":"session limit"}'
+  exit 1
+fi
+
+joined=" $* "
+[[ "$joined" == *" --resume quota-test-session "* ]] || {
+  echo "fake Claude was not resumed with the original session" >&2
+  exit 2
+}
+printf 'ISO-10303-21;\nEND-ISO-10303-21;\n' > output.step
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"quota-test-session"}'
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"resumed and exported"}'

@@ -260,6 +260,20 @@ suffix such as `-smoke6`, but the packager rejects names that do not retain the
 complete derived identity. ZIP packaging also fails rather than emitting
 ambiguous metadata when `run_meta.json`, the model, or the MCP version is absent.
 
+### Claude subscription quota recovery
+
+Claude MCP fixtures keep build123d-mcp in a fixture-local, loopback-only HTTP
+process owned by the harness rather than by Claude Code. If Claude returns a
+subscription quota rejection, the fixture worker does not exit: it retains the
+scratch workspace, Claude conversation ID, and live CAD namespace, waits until
+the provider's reported reset time, and resumes that conversation against the
+same MCP process. Because the worker remains allocated, `xargs` cannot dispatch
+later fixtures into a closed quota window. Parallel workers share a start gate
+that spaces resumed requests by five seconds; override this with
+`CGB_QUOTA_RESUME_SPACING_SECONDS` when necessary. A machine reboot or force-kill
+still loses the in-memory CAD namespace, so ordinary checkpoint/package hygiene
+remains necessary for multi-day runs.
+
 Sanity-check the zip before upload when in doubt:
 
 ```bash

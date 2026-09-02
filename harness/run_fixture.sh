@@ -36,6 +36,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 command -v claude >/dev/null || { echo "ERROR: 'claude' (Claude Code) not on PATH"; exit 1; }
 command -v uv     >/dev/null || { echo "ERROR: 'uv' not on PATH"; exit 1; }
+command -v jq     >/dev/null || { echo "ERROR: 'jq' not on PATH"; exit 1; }
 
 # --- Run isolation: execute in a scratch dir OUTSIDE the repo, mirror artifacts back. ---
 # The agent runs with CWD=$WORK and is given the $OUT path in its prompt. When those sit
@@ -48,7 +49,23 @@ REAL_WORK="$WORK"
 mkdir -p "$REAL_WORK"
 REAL_WORK="$(cd "$REAL_WORK" && pwd)"   # absolute: the run cd's into the sandbox, so the trap needs a fixed path
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cgb_fixture.XXXXXX")"
-trap 'cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true; rm -rf "$WORK"' EXIT
+MCP_HTTP_PID=""
+HELD_RESUME_LOCK=""
+cleanup() {
+  if [[ -n "$HELD_RESUME_LOCK" ]]; then
+    rm -f "$HELD_RESUME_LOCK/pid" 2>/dev/null || true
+    rmdir "$HELD_RESUME_LOCK" 2>/dev/null || true
+  fi
+  if [[ -n "$MCP_HTTP_PID" ]] && kill -0 "$MCP_HTTP_PID" 2>/dev/null; then
+    kill "$MCP_HTTP_PID" 2>/dev/null || true
+    wait "$MCP_HTTP_PID" 2>/dev/null || true
+  fi
+  cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p "$WORK"
 rm -f "$WORK/output.step" "$WORK/stream.jsonl" "$WORK/filtered.log"
@@ -82,17 +99,40 @@ fi
 # large imports genuinely need more wall-clock time, and the replay-recovery
 # safety net (#361) has its own budget, so avoiding the timeout beats recovering
 # from it. Kept comfortably under Claude Code's own MCP tool-call timeout.
-MCP_ARGS=(tool run --python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
-[[ -n "$EXEC_TIMEOUT" ]] && MCP_ARGS+=(--exec-timeout "$EXEC_TIMEOUT")
-MCP_ARGS_JSON="$(printf '"%s",' "${MCP_ARGS[@]}")"
-MCP_ARGS_JSON="[${MCP_ARGS_JSON%,}]"
+# Keep MCP outside Claude Code's process tree. Claude exits when subscription
+# quota is exhausted; a stdio MCP child dies with it and loses the entire CAD
+# namespace. A fixture-local loopback HTTP server survives while this wrapper
+# waits and while Claude resumes the same conversation after quota reset.
+MCP_HTTP_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+HTTP_MCP_SPEC="${MCP_SPEC/build123d-mcp/build123d-mcp[http]}"
+MCP_HTTP_ARGS=(--no-sandbox --disable-tool-groups drawing --transport http --host 127.0.0.1 --port "$MCP_HTTP_PORT" --session-idle-timeout 0)
+[[ -n "$EXEC_TIMEOUT" ]] && MCP_HTTP_ARGS+=(--exec-timeout "$EXEC_TIMEOUT")
+uv tool run --python 3.12 "$HTTP_MCP_SPEC" "${MCP_HTTP_ARGS[@]}" > "$WORK/mcp_http.log" 2>&1 &
+MCP_HTTP_PID=$!
+
+MCP_READY=false
+for _ in $(seq 1 120); do
+  kill -0 "$MCP_HTTP_PID" 2>/dev/null || {
+    echo "ERROR: persistent MCP HTTP server exited during startup"
+    tail -n 30 "$WORK/mcp_http.log" || true
+    exit 1
+  }
+  if python3 -c 'import socket,sys; s=socket.socket(); s.settimeout(.2); sys.exit(s.connect_ex(("127.0.0.1", int(sys.argv[1]))))' "$MCP_HTTP_PORT"; then
+    MCP_READY=true
+    break
+  fi
+  sleep 0.25
+done
+[[ "$MCP_READY" == true ]] || { echo "ERROR: persistent MCP HTTP server did not become ready"; exit 1; }
+
 cat > "$WORK/mcp_config.json" <<JSON
-{"mcpServers":{"build123d":{"command":"uv","args":$MCP_ARGS_JSON}}}
+{"mcpServers":{"build123d":{"type":"http","url":"http://127.0.0.1:$MCP_HTTP_PORT/mcp"}}}
 JSON
 
 echo "fixture: $FIX  ($TASK)"
 echo "work:    $WORK"
 echo "model:   $MODEL    effort: ${MODEL_EFFORT:-<default>}    mcp: $MCP_SPEC  exec-timeout: ${EXEC_TIMEOUT:-<default 120s>}  (--no-sandbox)"
+echo "mcp wire: persistent loopback HTTP on port $MCP_HTTP_PORT (survives Claude quota waits)"
 echo "live:    tail -n0 -f $WORK/stream.jsonl | python3 $HERE/stream_filter.py $WORK"
 echo "running claude -p ..."
 
@@ -119,16 +159,127 @@ ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__mea
 # per run, ~36% of them mismatching the tool names — pure wasted turns for a
 # fixed, known toolset. See docs.claude.com/en/mcp "Tool Search".
 export ENABLE_TOOL_SEARCH=false
-claude -p "$(cat prompt.txt)" \
-  --model "$MODEL" \
-  ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
-  --output-format stream-json --verbose \
-  --mcp-config mcp_config.json \
-  --strict-mcp-config \
-  --dangerously-skip-permissions \
-  --disable-slash-commands \
-  --allowedTools "$ALLOWED" \
-  > stream.jsonl 2>&1
+
+quota_reset_epoch() {
+  jq -r '
+    select(.type == "rate_limit_event" and .rate_limit_info.status == "rejected")
+    | .rate_limit_info.resetsAt // 0
+  ' "$1" 2>/dev/null | tail -n1
+}
+
+quota_rejected() {
+  local reset
+  reset="$(quota_reset_epoch "$1")"
+  [[ "$reset" =~ ^[0-9]+$ && "$reset" -gt 0 ]] || grep -q "You've hit your session limit" "$1"
+}
+
+# Space simultaneous resumes from a parallel sweep. The lock protects a shared
+# next-start timestamp; it is held for only a few seconds, never for a model run.
+quota_resume_gate() {
+  local root lock owner next now delay spacing
+  root="$(dirname "$REAL_WORK")"
+  lock="$root/.claude_quota_resume_lock"
+  spacing="${CGB_QUOTA_RESUME_SPACING_SECONDS:-5}"
+  [[ "$spacing" =~ ^[0-9]+$ ]] || spacing=5
+  while ! mkdir "$lock" 2>/dev/null; do
+    owner="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -f "$lock/pid" 2>/dev/null || true
+      rmdir "$lock" 2>/dev/null || true
+      continue
+    fi
+    sleep 1
+  done
+  HELD_RESUME_LOCK="$lock"
+  printf '%s\n' "$$" > "$lock/pid"
+  next="$(cat "$root/.claude_quota_next_resume" 2>/dev/null || echo 0)"
+  now="$(date +%s)"
+  [[ "$next" =~ ^[0-9]+$ ]] || next=0
+  delay=$((next - now))
+  (( delay > 0 )) && sleep "$delay"
+  now="$(date +%s)"
+  printf '%s\n' "$((now + spacing))" > "$root/.claude_quota_next_resume"
+  rm -f "$lock/pid"
+  rmdir "$lock"
+  HELD_RESUME_LOCK=""
+}
+
+wait_for_quota_reset() {
+  local reset target now remaining step grace
+  reset="$1"
+  grace="${CGB_QUOTA_RESET_GRACE_SECONDS:-5}"
+  [[ "$grace" =~ ^[0-9]+$ ]] || grace=5
+  now="$(date +%s)"
+  if [[ ! "$reset" =~ ^[0-9]+$ ]]; then
+    reset=$((now + 60))
+  elif (( reset < now )); then
+    reset=$now
+  fi
+  target=$((reset + grace))
+  while true; do
+    now="$(date +%s)"
+    remaining=$((target - now))
+    (( remaining <= 0 )) && break
+    step=$remaining
+    (( step > 60 )) && step=60
+    echo "quota wait: ${remaining}s until retry; fixture workspace and MCP session retained"
+    # Mirror a recoverable checkpoint while the live temp workspace stays put.
+    cp -a "$WORK"/. "$REAL_WORK"/ 2>/dev/null || true
+    sleep "$step"
+  done
+  quota_resume_gate
+}
+
+CLAUDE_ARGS=(
+  --model "$MODEL"
+  "${EFFORT_ARG[@]}"
+  --output-format stream-json --verbose
+  --mcp-config mcp_config.json
+  --strict-mcp-config
+  --dangerously-skip-permissions
+  --disable-slash-commands
+  --allowedTools "$ALLOWED"
+)
+
+: > stream.jsonl
+SESSION_ID=""
+ATTEMPT=1
+while true; do
+  ATTEMPT_LOG="attempt.${ATTEMPT}.stream.jsonl"
+  set +e
+  if [[ -z "$SESSION_ID" ]]; then
+    claude -p "$(cat prompt.txt)" "${CLAUDE_ARGS[@]}" > "$ATTEMPT_LOG" 2>&1
+  else
+    claude -p \
+      "Subscription quota interrupted the previous turn. Continue the same fixture from exactly where you stopped. The workspace and build123d MCP session were deliberately kept alive; inspect session_state if needed, then finish validation and export to $OUT." \
+      --resume "$SESSION_ID" \
+      "${CLAUDE_ARGS[@]}" > "$ATTEMPT_LOG" 2>&1
+  fi
+  CLAUDE_RC=$?
+  set -e
+
+  cat "$ATTEMPT_LOG" >> stream.jsonl
+  if [[ -z "$SESSION_ID" ]]; then
+    # The init event normally arrives first, but rejected rate-limit events also
+    # carry the conversation id. Accept either so an unusually early rejection
+    # can still be resumed rather than abandoning the fixture.
+    SESSION_ID="$(jq -r 'select(.session_id? | type == "string") | .session_id' "$ATTEMPT_LOG" 2>/dev/null | head -n1)"
+    [[ "$SESSION_ID" != "null" ]] || SESSION_ID=""
+  fi
+
+  if quota_rejected "$ATTEMPT_LOG"; then
+    [[ -n "$SESSION_ID" ]] || { echo "ERROR: quota rejection arrived without a resumable Claude session id"; exit 1; }
+    RESET_EPOCH="$(quota_reset_epoch "$ATTEMPT_LOG")"
+    echo "quota rejected: retaining fixture process, workspace, Claude conversation $SESSION_ID, and live MCP session"
+    wait_for_quota_reset "$RESET_EPOCH"
+    ATTEMPT=$((ATTEMPT + 1))
+    continue
+  fi
+
+  rm -f "$ATTEMPT_LOG"
+  (( CLAUDE_RC == 0 )) || exit "$CLAUDE_RC"
+  break
+done
 
 echo
 if [[ -f output.step ]]; then

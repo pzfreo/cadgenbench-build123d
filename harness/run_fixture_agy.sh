@@ -17,6 +17,7 @@ WORK="${2:?work dir}"
 MODEL="${3:-agy/gemini-3.7-flash-high}"
 MCP_SPEC="${4:-build123d-mcp==0.3.83}"
 EXEC_TIMEOUT="${5:-}"
+PROMPT_STYLE="${CGB_PROMPT_STYLE:-default}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 MODEL="${MODEL#agy/}"
@@ -58,7 +59,22 @@ if [[ -f "$FIX/edit_description.txt" ]]; then
     "$HERE/prompt_editing.txt" "$FIX/edit_description.txt" "$OUT" > "$WORK/prompt.txt"
   TASK="editing"
 else
-  sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation.txt" > "$WORK/prompt.txt"
+  if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" ]]; then
+    python3 "$HERE/render_official_baseline_prompt.py" --minimal-mcp > "$WORK/system_prompt.txt"
+    python3 - "$FIX/description.yaml" > "$WORK/prompt.txt" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text()
+match = re.search(r"(?ms)^description:\s*(?:[>|][-+]?\s*)?\n?(.*?)(?=^\S|\Z)", text)
+description = " ".join(line.strip() for line in match.group(1).splitlines()) if match else text.strip()
+print(description)
+print("\nThe engineering drawing is available as `input.png` in the working directory.")
+PY
+  else
+    sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation.txt" > "$WORK/prompt.txt"
+  fi
   TASK="generation"
 fi
 
@@ -67,12 +83,20 @@ echo "work:    $WORK"
 echo "model:   $MODEL    effort: ${MODEL_EFFORT:-model default}    driver: agy $(agy --version 2>/dev/null || echo unknown)"
 echo "mcp:     $MCP_SPEC  exec-timeout: ${EXEC_TIMEOUT:-configured by sweep}"
 echo "mode:    read-only plan, then resumed accept-edits execution"
+echo "prompt:  $PROMPT_STYLE"
 
 cd "$WORK"
 uv tool run --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
 
-PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. First inspect its input.png and, when present, input.step, edit_description.txt, and renders/ using read-only file and image tools. Then make a concise, concrete CAD implementation plan. Resolve the visible dimensions, target features, construction order, validation checks, and final export path. This is the planning turn: do not modify files or geometry yet. Do not delegate to subagents and do not use the browser or web. Return a final plan that can be executed immediately in the next turn."
-PROMPT_TEXT="$(< prompt.txt)"
+if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" && "$TASK" == "generation" ]]; then
+  PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. Inspect input.png and call the build123d MCP prepare_drawing tool exactly once near the start. Inspect its labelled overview and only relevant crops with the available image-viewing tool; use crop_drawing for an exact enlarged region when a callout or profile remains ambiguous. Then make a concise, concrete CAD implementation plan covering dimensions, body family, construction order, validation, and the final output.step export. This planning turn may create drawing-evidence PNGs but must not create model.py, modify CAD geometry, or export output.step. Do not delegate to subagents and do not use the browser or web. Return a plan executable immediately in the next turn."
+  PROMPT_TEXT="$(< system_prompt.txt)
+
+$(< prompt.txt)"
+else
+  PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. First inspect its input.png and, when present, input.step, edit_description.txt, and renders/ using read-only file and image tools. Then make a concise, concrete CAD implementation plan. Resolve the visible dimensions, target features, construction order, validation checks, and final export path. This is the planning turn: do not modify files or geometry yet. Do not delegate to subagents and do not use the browser or web. Return a final plan that can be executed immediately in the next turn."
+  PROMPT_TEXT="$(< prompt.txt)"
+fi
 
 agy --print "$PLAN_INSTRUCTION
 
@@ -95,7 +119,11 @@ CONVERSATION_ID="$(jq -r 'select(.event == "init") | .conversation_id' plan.stre
 }
 
 cp plan.stream.jsonl stream.jsonl
-EXECUTE_INSTRUCTION="Execute the plan now. Work autonomously in this directory, using the build123d MCP tools for all CAD construction, inspection, validation, and export. Do not merely restate or revise the plan. Do not delegate to subagents and do not use the browser or web. Continue until a validate/export-clean STEP exists exactly at $OUT; for an editing fixture, preserve the banked baseline unless a changed candidate is proven better."
+if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" && "$TASK" == "generation" ]]; then
+  EXECUTE_INSTRUCTION="Execute the plan now. Maintain the complete reproducible candidate in model.py and promote every complete revision with the build123d MCP execute_file tool. Use measure, render_view, and cross_sections only when they answer a specific fidelity question; validate before export, and export the final clean STEP exactly to $OUT. Do not merely restate or revise the plan. Do not delegate to subagents and do not use the browser or web. Continue until a validate/export-clean STEP exists at that exact path."
+else
+  EXECUTE_INSTRUCTION="Execute the plan now. Work autonomously in this directory, using the build123d MCP tools for all CAD construction, inspection, validation, and export. Do not merely restate or revise the plan. Do not delegate to subagents and do not use the browser or web. Continue until a validate/export-clean STEP exists exactly at $OUT; for an editing fixture, preserve the banked baseline unless a changed candidate is proven better."
+fi
 
 agy --print "$EXECUTE_INSTRUCTION" \
   --conversation "$CONVERSATION_ID" \

@@ -172,6 +172,9 @@ fi
 if [[ "$AGENT_DRIVER" == "antigravity-cli" ]]; then
   command -v agy >/dev/null || { echo "ERROR: 'agy' not on PATH"; exit 1; }
   AGY_MCP_ARGS=(mcp add build123d uv tool run --python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
+  if [[ "${CGB_PROMPT_STYLE:-default}" == "official-baseline-minimal-mcp" ]]; then
+    AGY_MCP_ARGS+=(--tools "prepare_drawing,crop_drawing,execute_file,measure,render_view,cross_sections,validate,export")
+  fi
   [[ -n "$EXEC_TIMEOUT" ]] && AGY_MCP_ARGS+=(--exec-timeout "$EXEC_TIMEOUT")
   agy "${AGY_MCP_ARGS[@]}" >/dev/null || { echo "ERROR: could not configure Agy build123d MCP"; exit 1; }
 fi

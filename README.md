@@ -218,12 +218,13 @@ To build the upload artifact, add `--zip`:
 ```bash
 uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
     python package_submission.py results/opus48-v1 \
-    --zip --name "<submission-name>"
+    --zip
 ```
 
 By default `--zip` pads to `splits/all.txt`, producing
-`submit/opus48-v1.zip` with all canonical CADGenBench fixture directories at
-the zip root. Directories with a submitted candidate contain `output.step`;
+an automatically named `submit/build123d-mcp-<version>-<model>-<effort>.zip`
+with all canonical CADGenBench fixture directories at the zip root. Directories
+with a submitted candidate contain `output.step`;
 directories without a candidate are written as explicit empty directory entries
 inside the zip. Missing outputs are expected to score zero.
 
@@ -233,8 +234,7 @@ override the padding list explicitly:
 ```bash
 uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
     python package_submission.py results/gpt55-v0372-smoke5 \
-    --zip --full-set splits/smoke4-v0372.txt \
-    --name gpt55-v0372-smoke5
+    --zip --full-set splits/smoke4-v0372.txt
 ```
 
 For a leaderboard-style upload from a partial run where you still want every
@@ -243,18 +243,22 @@ canonical fixture directory present, keep the default `--full-set splits/all.txt
 ```bash
 uv run --python 3.12 --with build123d-mcp==0.3.72 --with trimesh --with scipy \
     python package_submission.py results/gpt55-v0372-smoke5 \
-    --zip --name gpt55-v0372-smoke5
+    --zip
 ```
 
-That writes `submit/gpt55-v0372-smoke5.zip` with all 81 fixture directories and
-only the produced outputs filled in.
+That writes an automatically named ZIP with all 81 fixture directories and only
+the produced outputs filled in.
 
 The generated zip includes an auto-generated root `meta.json`. Its notes are
 stamped from `run_meta.json`: model, reasoning effort, resolved build123d-mcp
 version, and the cadgenbench-build123d commit that pins prompts/harness.
 `agent_url` points at that commit permalink. `submitter_name` defaults to
-`pzfreo`, and `submission_name` defaults to `pzfreo`; override them with
-`--submitter` and `--name`.
+`pzfreo`. For MCP runs, `submission_name` is automatically derived as
+`build123d-mcp-<resolved-version>-<normalized-model>-<effort>`; direct/no-MCP
+ablations use `build123d-direct-<model>-<effort>`. An optional `--name` may add a
+suffix such as `-smoke6`, but the packager rejects names that do not retain the
+complete derived identity. ZIP packaging also fails rather than emitting
+ambiguous metadata when `run_meta.json`, the model, or the MCP version is absent.
 
 Sanity-check the zip before upload when in doubt:
 
@@ -262,7 +266,7 @@ Sanity-check the zip before upload when in doubt:
 python3 - <<'PY'
 import zipfile
 from pathlib import Path
-p = Path("submit/gpt55-v0372-smoke5.zip")
+p = Path("submit/build123d-mcp-0.3.72-gpt-5.5-high.zip")
 with zipfile.ZipFile(p) as z:
     names = z.namelist()
     dirs = {n.split("/")[0] for n in names if "/" in n and n.split("/")[0].isdigit()}

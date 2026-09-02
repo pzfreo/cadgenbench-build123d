@@ -9,6 +9,7 @@ MODEL="claude-opus-5:xhigh"
 RESULTS="$ROOT/results/$RUN"
 WORK="$ROOT/work/$RUN"
 ALL="$ROOT/splits/all.txt"
+PACKAGE="$ROOT/submit/build123d-direct-opus-5-xhigh.zip"
 CLAUDE=/home/teleclaude/.npm-global/bin/claude
 
 mkdir -p "$RESULTS" "$WORK" "$ROOT/logs/$RUN"
@@ -57,8 +58,7 @@ launch_missing() {
   missing=$(wc -l < "$WORK/watch-missing.txt" | tr -d ' ')
   if [[ "$missing" -eq 0 ]]; then
     uv run --python 3.12 --with build123d-mcp==0.3.81 --with trimesh --with scipy \
-      python "$ROOT/package_submission.py" "$RESULTS" --zip --full-set "$ALL" \
-      --name opus5-xhigh-official-baseline-prompt-nomcp-complete-r1
+      python "$ROOT/package_submission.py" "$RESULTS" --zip --full-set "$ALL"
     return $?
   fi
   rm -f "$WORK/full-supervisor.done"
@@ -73,8 +73,7 @@ launch_missing() {
     package_status=98
     if [[ "$count" -eq 81 ]]; then
       uv run --python 3.12 --with build123d-mcp==0.3.81 --with trimesh --with scipy \
-        python package_submission.py "results/$run_name" --zip --full-set splits/all.txt \
-        --name opus5-xhigh-official-baseline-prompt-nomcp-complete-r1
+        python package_submission.py "results/$run_name" --zip --full-set splits/all.txt
       package_status=$?
     fi
     printf "sweep_status=%s package_status=%s outputs=%s completed_utc=%s\n" \
@@ -99,8 +98,8 @@ while true; do
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$complete" "$controllers" "$active"
 
   if [[ "$missing" -eq 0 ]]; then
-    if [[ -f "$ROOT/submit/$RUN.zip" ]]; then
-      printf '%s COMPLETE package=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ROOT/submit/$RUN.zip"
+    if [[ -f "$PACKAGE" ]]; then
+      printf '%s COMPLETE package=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PACKAGE"
       exit 0
     fi
     if [[ "$controllers" -eq 0 ]]; then

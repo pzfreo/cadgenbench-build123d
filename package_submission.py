@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,82 @@ import zipfile
 from pathlib import Path
 
 CANDIDATE_NAMES = ("output.step", "output.stp", "output.stl", "output.obj", "output.off", "output.3mf", "output.ply")
+
+
+def _mcp_version(manifest):
+    """Return the sweep-time MCP version, falling back to package-time metadata."""
+    rm = manifest.get("run_meta", {})
+    return (
+        rm.get("mcp_version")
+        or manifest.get("resolved_versions", {}).get("build123d_mcp")
+    )
+
+
+def _model_slug(model, effort):
+    """Normalize a provider model ID for a compact leaderboard identity."""
+    slug = str(model).strip().lower()
+    for prefix in ("anthropic/", "google/", "agy/"):
+        if slug.startswith(prefix):
+            slug = slug[len(prefix):]
+    if slug.startswith("claude-"):
+        slug = slug[len("claude-"):]
+    slug = re.sub(r"[^a-z0-9.]+", "-", slug).strip("-")
+
+    # Agy model IDs sometimes carry effort as a suffix even though run_meta also
+    # records it separately. Keep the generated name canonical and non-repeated.
+    if effort and effort != "config-default" and slug.endswith(f"-{effort}"):
+        slug = slug[: -(len(effort) + 1)]
+
+    # Anthropic API IDs spell minor versions with a hyphen (fable-5-1), while
+    # the public model name is Fable 5.1. Preserve family names and render the
+    # version compactly for the leaderboard.
+    match = re.fullmatch(r"(fable|opus|sonnet|haiku)-(\d+)-(\d+)", slug)
+    if match:
+        slug = f"{match.group(1)}-{match.group(2)}.{match.group(3)}"
+    return slug
+
+
+def derive_submission_name(manifest):
+    """Derive a truthful leaderboard name from immutable sweep provenance."""
+    rm = manifest.get("run_meta")
+    if not isinstance(rm, dict):
+        raise ValueError("cannot package ZIP without results/<run>/run_meta.json")
+
+    model = rm.get("model")
+    if not model or model == "unknown":
+        raise ValueError("cannot package ZIP: run_meta.json has no resolved model")
+    effort = rm.get("reasoning_effort")
+    model_slug = _model_slug(model, effort)
+    if not model_slug:
+        raise ValueError("cannot package ZIP: model does not produce a valid name slug")
+
+    mcp_version = _mcp_version(manifest)
+    if not mcp_version or mcp_version == "unknown":
+        raise ValueError("cannot package ZIP: build123d-mcp version is unresolved")
+    if mcp_version == "none":
+        parts = ["build123d-direct", model_slug]
+    else:
+        parts = ["build123d-mcp", str(mcp_version), model_slug]
+    if effort and effort != "config-default":
+        parts.append(re.sub(r"[^a-z0-9.]+", "-", str(effort).lower()).strip("-"))
+    return "-".join(parts)
+
+
+def resolve_submission_name(manifest, requested_name=None):
+    """Return the automatic name, rejecting manual names that obscure identity."""
+    derived = derive_submission_name(manifest)
+    if not requested_name:
+        return derived
+    if not re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", requested_name):
+        raise ValueError(
+            "invalid --name: use lowercase letters, digits, single hyphens, and dots only"
+        )
+    if requested_name != derived and not requested_name.startswith(f"{derived}-"):
+        raise ValueError(
+            f"invalid --name {requested_name!r}; it must be {derived!r} or begin "
+            f"with {derived + '-'!r}"
+        )
+    return requested_name
 
 
 def proxy_gate(step_path):
@@ -60,7 +137,7 @@ def proxy_gate(step_path):
     )
 
 
-def build_submission_zip(root, manifest, full_set_path, submitter, name):
+def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
     """Build the upload-ready zip: meta.json + every fixture dir at the root.
 
     Pads to the canonical full fixture set (CADGenBench requires every sample dir
@@ -71,6 +148,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
     prompts/harness) — so the upload is self-describing. agent_url is the commit
     permalink.
     """
+    name = resolve_submission_name(manifest, name)
     rm = manifest.get("run_meta", {})
     model = rm.get("model", "unknown")
     effort = rm.get("reasoning_effort")
@@ -92,11 +170,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
         )
     else:
         provider_desc = ""
-    mcp_version = (
-        rm.get("mcp_version")
-        or manifest.get("resolved_versions", {}).get("build123d_mcp")
-        or "unknown"
-    )
+    mcp_version = _mcp_version(manifest) or "unknown"
     commit = rm.get("git_commit", "unknown")
 
     ids = []
@@ -144,7 +218,10 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name):
         if out.exists() and out.stat().st_size > 0:
             shutil.copy(out, d / "output.step")
 
-    zip_path = Path("submit") / f"{root.name}.zip"
+    zip_path = Path("submit") / f"{name}.zip"
+    legacy_zip_path = Path("submit") / f"{root.name}.zip"
+    if legacy_zip_path != zip_path and legacy_zip_path.exists():
+        legacy_zip_path.unlink()
     if zip_path.exists():
         zip_path.unlink()
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -179,7 +256,14 @@ def main():
         "--full-set", default="splits/all.txt", help="canonical full fixture-id list to pad the zip to"
     )
     ap.add_argument("--submitter", default="pzfreo", help="meta.json submitter_name")
-    ap.add_argument("--name", default="pzfreo", help="meta.json submission_name")
+    ap.add_argument(
+        "--name",
+        default=None,
+        help=(
+            "optional suffix-bearing submission_name; by default it is derived from "
+            "run_meta.json, and any override must retain the complete derived prefix"
+        ),
+    )
     args = ap.parse_args()
 
     root = Path(args.results_dir)
@@ -263,7 +347,10 @@ def main():
         print("official gate     : not run — pass --official-sanity-check PATH before submitting")
     print(f"manifest          : {root / 'manifest.json'}")
     if args.zip:
-        build_submission_zip(root, manifest, args.full_set, args.submitter, args.name)
+        try:
+            build_submission_zip(root, manifest, args.full_set, args.submitter, args.name)
+        except ValueError as exc:
+            sys.exit(f"cannot build submission ZIP: {exc}")
 
     print("\nnext steps:")
     print("  1. run the official sanity check on every output.step (see CADGenBench docs)")

@@ -274,6 +274,11 @@ that spaces resumed requests by five seconds; override this with
 still loses the in-memory CAD namespace, so ordinary checkpoint/package hygiene
 remains necessary for multi-day runs.
 
+Claude run metadata also stamps `credential_source` as either
+`anthropic-api-key` or `claude-subscription`, based on whether
+`ANTHROPIC_API_KEY` was present at launch. The packager carries this distinction
+into the submission notes so API and subscription runs cannot be confused.
+
 Sanity-check the zip before upload when in doubt:
 
 ```bash

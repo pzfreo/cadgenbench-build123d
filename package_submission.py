@@ -159,6 +159,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
     )
     provider = rm.get("model_provider")
     driver = rm.get("agent_driver")
+    credential = rm.get("credential_source")
     if provider == "vercel-ai-gateway":
         provider_desc = " via Codex CLI + Vercel AI Gateway"
     elif driver == "antigravity-cli":
@@ -170,6 +171,8 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
         )
     else:
         provider_desc = ""
+    if driver == "claude-code" and credential:
+        provider_desc += f" using {credential}"
     mcp_version = _mcp_version(manifest) or "unknown"
     commit = rm.get("git_commit", "unknown")
 

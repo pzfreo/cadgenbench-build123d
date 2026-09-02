@@ -94,6 +94,7 @@ esac
 # Provider/driver are part of the scored system. google/* models use the
 # Vercel AI Gateway's Codex compatibility endpoint in run_fixture_codex.sh;
 # other Codex models retain the user's configured provider.
+CREDENTIAL_SOURCE="provider-default"
 case "$MODEL_ID" in
   claude-*)
     AGENT_DRIVER="claude-code"
@@ -101,6 +102,11 @@ case "$MODEL_ID" in
     PROVIDER_ENDPOINT="default"
     MCP_TOOL_TRANSPORT="persistent-loopback-http"
     AGENT_MODE="single-turn-quota-resumable"
+    if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+      CREDENTIAL_SOURCE="anthropic-api-key"
+    else
+      CREDENTIAL_SOURCE="claude-subscription"
+    fi
     ;;
   agy/*)
     AGENT_DRIVER="antigravity-cli"
@@ -178,6 +184,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
   "agent_driver": "$AGENT_DRIVER",
   "model_provider": "$MODEL_PROVIDER",
   "provider_endpoint": "$PROVIDER_ENDPOINT",
+  "credential_source": "$CREDENTIAL_SOURCE",
   "codex_cli_version": "$CODEX_CLI_VERSION",
   "agy_cli_version": "$AGY_CLI_VERSION",
   "agent_mode": "$AGENT_MODE",

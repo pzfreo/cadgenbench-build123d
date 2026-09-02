@@ -21,6 +21,7 @@ WORK="${2:?work dir}"
 MODEL="${3:-claude-opus-4-8}"
 MCP_SPEC="${4:-build123d-mcp==0.3.81}"
 EXEC_TIMEOUT="${5:-}"
+PROMPT_STYLE="${CGB_PROMPT_STYLE:-default}"
 
 # Optional reasoning-effort suffix on the model id: "claude-fable-5:xhigh" ->
 # model "claude-fable-5" + --effort xhigh (levels: low|medium|high|xhigh|max).
@@ -34,7 +35,11 @@ EFFORT_ARG=()
 [[ -n "$MODEL_EFFORT" ]] && EFFORT_ARG=(--effort "$MODEL_EFFORT")
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-command -v claude >/dev/null || { echo "ERROR: 'claude' (Claude Code) not on PATH"; exit 1; }
+CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
+if [[ -z "$CLAUDE_BIN" && -x /home/teleclaude/.npm-global/bin/claude ]]; then
+  CLAUDE_BIN=/home/teleclaude/.npm-global/bin/claude
+fi
+[[ -n "$CLAUDE_BIN" ]] || { echo "ERROR: 'claude' (Claude Code) not found"; exit 1; }
 command -v uv     >/dev/null || { echo "ERROR: 'uv' not on PATH"; exit 1; }
 
 # --- Run isolation: execute in a scratch dir OUTSIDE the repo, mirror artifacts back. ---
@@ -65,7 +70,21 @@ if [[ -f "$FIX/edit_description.txt" ]]; then
     "$HERE/prompt_editing.txt" "$FIX/edit_description.txt" "$OUT" > "$WORK/prompt.txt"
   TASK="editing"
 else
-  sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation.txt" > "$WORK/prompt.txt"
+  if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" ]]; then
+    python3 "$HERE/render_official_baseline_prompt.py" --minimal-mcp > "$WORK/system_prompt.txt"
+    python3 - "$FIX/description.yaml" > "$WORK/prompt.txt" <<'PY'
+from pathlib import Path
+import re, sys
+
+text = Path(sys.argv[1]).read_text()
+match = re.search(r"(?ms)^description:\s*(?:[>|][-+]?\s*)?\n?(.*?)(?=^\S|\Z)", text)
+description = " ".join(line.strip() for line in match.group(1).splitlines()) if match else text.strip()
+print(description)
+print("\nThe engineering drawing is available as `input.png` in the working directory.")
+PY
+  else
+    sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation.txt" > "$WORK/prompt.txt"
+  fi
   TASK="generation"
 fi
 
@@ -82,7 +101,26 @@ fi
 # large imports genuinely need more wall-clock time, and the replay-recovery
 # safety net (#361) has its own budget, so avoiding the timeout beats recovering
 # from it. Kept comfortably under Claude Code's own MCP tool-call timeout.
-MCP_ARGS=(tool run --python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
+# A local file spec must execute from that checkout, not through `uv tool run`:
+# uv's persistent tool cache can otherwise keep an older console-script build
+# after the source changes. Registry/version specs continue to use the isolated
+# tool runner used by normal benchmark sweeps.
+case "$MCP_SPEC" in
+  *" @ file://"*)
+    MCP_LOCAL_DIR="${MCP_SPEC#* @ file://}"
+    # --project selects the checkout environment without changing the server
+    # process CWD; relative fixture paths such as input.png must resolve inside
+    # the isolated fixture directory.
+    MCP_ARGS=(run --project "$MCP_LOCAL_DIR" build123d-mcp --no-sandbox --disable-tool-groups drawing)
+    ;;
+  *)
+    MCP_ARGS=(tool run --python 3.12 "$MCP_SPEC" --no-sandbox --disable-tool-groups drawing)
+    ;;
+esac
+MINIMAL_TOOLS="prepare_drawing,crop_drawing,calibrate_drawing,execute_file,measure,render_view,cross_sections,validate,export"
+if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" ]]; then
+  MCP_ARGS+=(--tools "$MINIMAL_TOOLS")
+fi
 [[ -n "$EXEC_TIMEOUT" ]] && MCP_ARGS+=(--exec-timeout "$EXEC_TIMEOUT")
 MCP_ARGS_JSON="$(printf '"%s",' "${MCP_ARGS[@]}")"
 MCP_ARGS_JSON="[${MCP_ARGS_JSON%,}]"
@@ -112,21 +150,33 @@ cd "$WORK"
 # "conforms: true" result reliably reads to the model as a stop signal regardless
 # of prompt caveats saying otherwise (build123d-mcp#362). The Codex driver has no
 # equivalent allowlist, so this can only be hard-blocked here.
-ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects"
+if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" ]]; then
+  ALLOWED="Read,Write,Edit,Bash,Glob,Grep,mcp__build123d__prepare_drawing,mcp__build123d__crop_drawing,mcp__build123d__calibrate_drawing,mcp__build123d__execute_file,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__cross_sections,mcp__build123d__validate,mcp__build123d__export"
+  BUILTIN_TOOLS_ARGS=(--tools "Read,Write,Edit,Bash,Glob,Grep")
+else
+  ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects,mcp__build123d__execute_file"
+  BUILTIN_TOOLS_ARGS=()
+fi
 
 # Eagerly load the build123d MCP tool schemas instead of deferring them behind
 # the ToolSearch tool (Claude Code's default). Deferral cost ~3 ToolSearch calls
 # per run, ~36% of them mismatching the tool names — pure wasted turns for a
 # fixed, known toolset. See docs.claude.com/en/mcp "Tool Search".
 export ENABLE_TOOL_SEARCH=false
-claude -p "$(cat prompt.txt)" \
+SYSTEM_PROMPT_ARGS=()
+if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" ]]; then
+  SYSTEM_PROMPT_ARGS=(--system-prompt "$(cat system_prompt.txt)")
+fi
+"$CLAUDE_BIN" -p "$(cat prompt.txt)" \
   --model "$MODEL" \
   ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
+  ${SYSTEM_PROMPT_ARGS[@]+"${SYSTEM_PROMPT_ARGS[@]}"} \
   --output-format stream-json --verbose \
   --mcp-config mcp_config.json \
   --strict-mcp-config \
   --dangerously-skip-permissions \
   --disable-slash-commands \
+  ${BUILTIN_TOOLS_ARGS[@]+"${BUILTIN_TOOLS_ARGS[@]}"} \
   --allowedTools "$ALLOWED" \
   > stream.jsonl 2>&1
 

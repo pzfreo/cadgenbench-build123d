@@ -130,6 +130,10 @@ case "$MODEL_ID" in
 esac
 [[ -n "${MCP_TOOL_TRANSPORT:-}" ]] || MCP_TOOL_TRANSPORT="native"
 [[ -n "${AGENT_MODE:-}" ]] || AGENT_MODE="$([[ "$AGENT_DRIVER" == "antigravity-cli" ]] && echo plan-then-accept-edits || echo single-turn)"
+RECOGNITION_POLICY="default"
+if [[ "${CGB_FORCE_RECOGNITION:-0}" == "1" ]]; then
+  RECOGNITION_POLICY="required-in-edit-planning-with-corrective-turn"
+fi
 CODEX_CLI_VERSION="not-applicable"
 AGY_CLI_VERSION="not-applicable"
 if [[ "$AGENT_DRIVER" == "codex-cli" ]]; then
@@ -191,6 +195,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
   "codex_cli_version": "$CODEX_CLI_VERSION",
   "agy_cli_version": "$AGY_CLI_VERSION",
   "agent_mode": "$AGENT_MODE",
+  "recognition_policy": "$RECOGNITION_POLICY",
   "mcp_tool_transport": "$MCP_TOOL_TRANSPORT",
   "prompt_style": "${CGB_PROMPT_STYLE:-default}",
   "mcp_spec": "$MCP_SPEC",
@@ -205,7 +210,7 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 JSON
 [[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
 
-echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, provider=$MODEL_PROVIDER, mcp=$MCP_SPEC, exec-timeout=${EXEC_TIMEOUT:-default}"
+echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, provider=$MODEL_PROVIDER, mcp=$MCP_SPEC, exec-timeout=${EXEC_TIMEOUT:-default}, recognition=$RECOGNITION_POLICY"
 echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION -> results/$RUN/run_meta.json"
 echo
 

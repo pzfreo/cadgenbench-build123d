@@ -18,6 +18,7 @@ MODEL="${3:-agy/gemini-3.7-flash-high}"
 MCP_SPEC="${4:-build123d-mcp==0.3.83}"
 EXEC_TIMEOUT="${5:-}"
 PROMPT_STYLE="${CGB_PROMPT_STYLE:-default}"
+FORCE_RECOGNITION="${CGB_FORCE_RECOGNITION:-0}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 MODEL="${MODEL#agy/}"
@@ -93,6 +94,8 @@ if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" && "$TASK" == "generati
   PROMPT_TEXT="$(< system_prompt.txt)
 
 $(< prompt.txt)"
+elif [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]]; then
+  PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. Inspect input.png, input.step, edit_description.txt, and renders/ using read-only file and image tools. Import input.step into the build123d MCP as object_name='part', then you MUST call recognise_features(object_name='part') once with families omitted for the compact inventory before manually walking topology. After reading that inventory, call recognise_features again with only the family or families relevant to the requested edit when any are available, and use returned feature records or exact face evidence to resolve the target. An explicit empty family is evidence of a recogniser miss: record it and continue with conventional inspection rather than substituting a nearby feature. Then make a concise, concrete CAD implementation plan covering the confirmed target, dimensions, construction order, validation, and final output.step export. This planning turn may import and inspect geometry but must not modify it or export output.step. Do not delegate to subagents and do not use the browser or web. Do not finish the plan before the required compact-inventory recognise_features call has completed."
 else
   PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. First inspect its input.png and, when present, input.step, edit_description.txt, and renders/ using read-only file and image tools. Then make a concise, concrete CAD implementation plan. Resolve the visible dimensions, target features, construction order, validation checks, and final export path. This is the planning turn: do not modify files or geometry yet. Do not delegate to subagents and do not use the browser or web. Return a final plan that can be executed immediately in the next turn."
   PROMPT_TEXT="$(< prompt.txt)"
@@ -117,6 +120,40 @@ CONVERSATION_ID="$(jq -r 'select(.event == "init") | .conversation_id' plan.stre
   cp plan.stream.jsonl stream.jsonl
   exit 1
 }
+
+recognition_completed() {
+  jq -e 'select(
+    .event == "step_update"
+    and .step_update.state == "DONE"
+    and .step_update.step_type == "tool"
+    and (
+      .step_update.tool_info.parameters.ToolName == "recognise_features"
+      or (.step_update.tool_name // "" | endswith("recognise_features"))
+      or (.step_update.tool_info.name // "" | endswith("recognise_features"))
+    )
+  )' plan.stream.jsonl >/dev/null
+}
+
+if [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]] && ! recognition_completed; then
+  echo "required recognise_features call missing; issuing corrective planning turn"
+  agy --print "The required recognition step is still missing. Before finalizing the plan, import input.step through the build123d MCP as object_name='part' if needed, call recognise_features(object_name='part') with families omitted, inspect its compact inventory, and then update the plan. Do not edit geometry or export output.step in this planning turn." \
+    --conversation "$CONVERSATION_ID" \
+    --mode plan \
+    --dangerously-skip-permissions \
+    --sandbox \
+    --add-dir "$WORK" \
+    --model "$MODEL" \
+    "${EFFORT_ARGS[@]}" \
+    --output-format stream-json \
+    --print-timeout 90m \
+    >> plan.stream.jsonl
+fi
+
+if [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]] && ! recognition_completed; then
+  echo "ERROR: forced-recognition policy not satisfied after corrective planning turn"
+  cp plan.stream.jsonl stream.jsonl
+  exit 1
+fi
 
 cp plan.stream.jsonl stream.jsonl
 if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" && "$TASK" == "generation" ]]; then

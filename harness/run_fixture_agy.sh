@@ -19,6 +19,10 @@ MCP_SPEC="${4:-build123d-mcp==0.3.83}"
 EXEC_TIMEOUT="${5:-}"
 PROMPT_STYLE="${CGB_PROMPT_STYLE:-default}"
 FORCE_RECOGNITION="${CGB_FORCE_RECOGNITION:-0}"
+RECOGNITION_POLICY="${CGB_RECOGNITION_POLICY:-default}"
+if [[ "$RECOGNITION_POLICY" == "default" && "$FORCE_RECOGNITION" == "1" ]]; then
+  RECOGNITION_POLICY="required-in-edit-planning-with-corrective-turn"
+fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 MODEL="${MODEL#agy/}"
@@ -95,7 +99,7 @@ if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" && "$TASK" == "generati
   PROMPT_TEXT="$(< system_prompt.txt)
 
 $(< prompt.txt)"
-elif [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]]; then
+elif [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-planning-with-corrective-turn" ]]; then
   PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. Inspect input.png, input.step, edit_description.txt, and renders/ using read-only file and image tools. Import input.step into the build123d MCP as object_name='part', then you MUST call recognise_features(object_name='part') once with families omitted for the compact inventory before manually walking topology. After reading that inventory, call recognise_features again with only the family or families relevant to the requested edit when any are available, and use returned feature records or exact face evidence to resolve the target. An explicit empty family is evidence of a recogniser miss: record it and continue with conventional inspection rather than substituting a nearby feature. Then make a concise, concrete CAD implementation plan covering the confirmed target, dimensions, construction order, validation, and final output.step export. This planning turn may import and inspect geometry but must not modify it or export output.step. Do not delegate to subagents and do not use the browser or web. Do not finish the plan before the required compact-inventory recognise_features call has completed."
 else
   PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. First inspect its input.png and, when present, input.step, edit_description.txt, and renders/ using read-only file and image tools. Then make a concise, concrete CAD implementation plan. Resolve the visible dimensions, target features, construction order, validation checks, and final export path. This is the planning turn: do not modify files or geometry yet. Do not delegate to subagents and do not use the browser or web. Return a final plan that can be executed immediately in the next turn."
@@ -134,7 +138,7 @@ recognition_completed() {
   )' plan.stream.jsonl >/dev/null
 }
 
-if [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]] && ! recognition_completed; then
+if [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-planning-with-corrective-turn" ]] && ! recognition_completed; then
   echo "required recognise_features call missing; issuing corrective planning turn"
   agy --print "The required recognition step is still missing. Before finalizing the plan, import input.step through the build123d MCP as object_name='part' if needed, call recognise_features(object_name='part') with families omitted, inspect its compact inventory, and then update the plan. Do not edit geometry or export output.step in this planning turn." \
     --conversation "$CONVERSATION_ID" \
@@ -149,7 +153,7 @@ if [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]] && ! recognition_co
     >> plan.stream.jsonl
 fi
 
-if [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]] && ! recognition_completed; then
+if [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-planning-with-corrective-turn" ]] && ! recognition_completed; then
   echo "ERROR: forced-recognition policy not satisfied after corrective planning turn"
   cp plan.stream.jsonl stream.jsonl
   exit 1
@@ -158,6 +162,8 @@ fi
 cp plan.stream.jsonl stream.jsonl
 if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" && "$TASK" == "generation" ]]; then
   EXECUTE_INSTRUCTION="Execute the plan now. Maintain the complete reproducible candidate in model.py and promote every complete revision with the build123d MCP execute_file tool. Use measure, render_view, and cross_sections only when they answer a specific fidelity question; validate before export, and export the final clean STEP exactly to $OUT. Do not merely restate or revise the plan. Do not delegate to subagents and do not use the browser or web. Continue until a validate/export-clean STEP exists at that exact path."
+elif [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-execution" ]]; then
+  EXECUTE_INSTRUCTION="Execute the plan now. This execution turn has a fresh build123d MCP session: do not rely on any object, snapshot, face number, or @feature handle from planning. First import input.step as object_name='part', validate it, export the unchanged valid baseline to $OUT, and save a baseline snapshot. Before manually walking topology, you MUST call recognise_features(object_name='part') once with families omitted, then call it with only the relevant supported family or families from the returned targetable inventory. When that targeted call returns candidate features, immediately use recognition_faces('@feature[...]') inside execute() in this same session and operate on or inspect the returned Face objects directly; do not use Python list.index() or assume object identity with part.faces(). If recognition errors or returns no matching feature, record a recogniser miss and use a bounded conventional fallback: after at most eight exploratory execute() calls without a validate-clean candidate, retain the banked baseline. Work autonomously in this directory and use build123d MCP tools for all CAD work. After editing, compare against a freshly imported immutable input, verify that bounding-box changes occur only on axes and by amounts implied by the request, validate, export to exactly $OUT, re-import that STEP, and repeat the invariant check. Reject the candidate and retain the baseline if unrelated extents, components, or protected geometry changed. Do not merely restate or revise the plan. Do not delegate to subagents and do not use the browser or web."
 else
   EXECUTE_INSTRUCTION="Execute the plan now. Work autonomously in this directory, using the build123d MCP tools for all CAD construction, inspection, validation, and export. Do not merely restate or revise the plan. Do not delegate to subagents and do not use the browser or web. Continue until a validate/export-clean STEP exists exactly at $OUT; for an editing fixture, preserve the banked baseline unless a changed candidate is proven better."
 fi
@@ -172,7 +178,16 @@ agy --print "$EXECUTE_INSTRUCTION" \
   "${EFFORT_ARGS[@]}" \
   --output-format stream-json \
   --print-timeout 90m \
-  >> stream.jsonl
+  > execute.stream.jsonl
+
+cat execute.stream.jsonl >> stream.jsonl
+
+if [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-execution" ]]; then
+  python3 "$HERE/audit_agy_recognition.py" execute.stream.jsonl > recognition_audit.json
+  if ! jq -e '.recognition_completed and .resolution_requirement_satisfied' recognition_audit.json >/dev/null; then
+    echo "WARNING: execution-phase recognition policy was not fully satisfied; see recognition_audit.json"
+  fi
+fi
 
 echo
 if [[ -f output.step ]]; then

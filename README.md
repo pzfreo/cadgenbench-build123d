@@ -174,6 +174,23 @@ tail -n0 -f work/agy-gemini37-high-plan/<id>_run/stream.jsonl \
     | python3 harness/stream_filter_agy.py work/agy-gemini37-high-plan/<id>_run
 ```
 
+Editing experiments can require recognition in the accept-edits turn rather
+than the disposable planning MCP process:
+
+```bash
+CGB_RECOGNITION_POLICY=required-in-edit-execution \
+  ./run_sweep.sh splits/recognition-execution-diagnostic8.txt \
+  agy-gemini38-recognition-execution-diagnostic8 \
+  agy/gemini-3.8-flash-high \
+  'build123d-mcp @ file:///absolute/path/to/build123d-mcp' 8 240
+```
+
+The execution prompt re-imports the starting part, runs compact and targeted
+recognition, requires same-session `recognition_faces()` use for returned
+features, and bounds conventional fallback after a miss. Each fixture writes
+`recognition_audit.json`; `run_meta.json` records the selected recognition
+policy. `CGB_FORCE_RECOGNITION=1` remains the legacy planning-turn policy.
+
 ### Gemini through Codex + Vercel AI Gateway
 
 `google/*` model ids reuse the Codex driver and its MCP/image orchestration but

@@ -130,8 +130,8 @@ case "$MODEL_ID" in
 esac
 [[ -n "${MCP_TOOL_TRANSPORT:-}" ]] || MCP_TOOL_TRANSPORT="native"
 [[ -n "${AGENT_MODE:-}" ]] || AGENT_MODE="$([[ "$AGENT_DRIVER" == "antigravity-cli" ]] && echo plan-then-accept-edits || echo single-turn)"
-RECOGNITION_POLICY="default"
-if [[ "${CGB_FORCE_RECOGNITION:-0}" == "1" ]]; then
+RECOGNITION_POLICY="${CGB_RECOGNITION_POLICY:-default}"
+if [[ "$RECOGNITION_POLICY" == "default" && "${CGB_FORCE_RECOGNITION:-0}" == "1" ]]; then
   RECOGNITION_POLICY="required-in-edit-planning-with-corrective-turn"
 fi
 CODEX_CLI_VERSION="not-applicable"

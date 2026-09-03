@@ -1,6 +1,10 @@
 import unittest
 
-from package_submission import derive_submission_name, resolve_submission_name
+from package_submission import (
+    derive_submission_name,
+    describe_task_sources,
+    resolve_submission_name,
+)
 
 
 class SubmissionNameTests(unittest.TestCase):
@@ -55,6 +59,29 @@ class SubmissionNameTests(unittest.TestCase):
     def test_missing_provenance_cannot_be_packaged(self):
         with self.assertRaisesRegex(ValueError, "run_meta.json"):
             derive_submission_name({})
+
+    def test_fixture_overrides_are_included_in_source_notes(self):
+        notes = describe_task_sources(
+            {
+                "editing": {
+                    "fixture_count": 32,
+                    "reused": True,
+                    "mcp_version": "0.3.84.dev0",
+                    "harness_commit": "e7a4cd2c045325091b938e00e2b809f1e30f4c31",
+                    "fixture_overrides": [
+                        {
+                            "fixture_ids": ["202", "240"],
+                            "mcp_version": "0.3.84.dev0",
+                            "harness_commit": "9276fef1368ecdb869e7ec693298a73803d5aacf",
+                            "recognition_policy": "repair-first-then-strict-recognition",
+                        }
+                    ],
+                }
+            }
+        )
+        self.assertEqual(len(notes), 2)
+        self.assertIn("Editing fixtures 202,240 overridden", notes[1])
+        self.assertIn("repair-first-then-strict-recognition", notes[1])
 
 
 if __name__ == "__main__":

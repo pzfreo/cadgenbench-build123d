@@ -137,6 +137,50 @@ def proxy_gate(step_path):
     )
 
 
+def describe_task_sources(task_sources):
+    """Render task and fixture-override provenance for submission notes."""
+    source_notes = []
+    for task_name in ("generation", "editing"):
+        source = task_sources.get(task_name)
+        if not isinstance(source, dict):
+            continue
+        count = source.get("fixture_count", "?")
+        action = "reused unchanged from" if source.get("reused") else "from"
+        source_mcp = source.get("mcp_version", "unknown")
+        source_mcp_commit = source.get("mcp_git_commit")
+        source_revision = (
+            f" @ {source_mcp_commit[:12]}"
+            if source_mcp_commit
+            and source_mcp_commit not in {"unknown", "not-applicable"}
+            else ""
+        )
+        source_harness = source.get("harness_commit", "unknown")
+        source_agent = source.get("agent", "")
+        agent_suffix = f", {source_agent}" if source_agent else ""
+        source_notes.append(
+            f"{task_name.capitalize()}: {count} outputs {action} build123d-mcp "
+            f"{source_mcp}{source_revision}, harness {source_harness[:12]}"
+            f"{agent_suffix}"
+        )
+
+        for override in source.get("fixture_overrides", []):
+            if not isinstance(override, dict):
+                continue
+            fixture_ids = [str(fid) for fid in override.get("fixture_ids", [])]
+            if not fixture_ids:
+                continue
+            override_mcp = override.get("mcp_version", "unknown")
+            override_harness = override.get("harness_commit", "unknown")
+            override_policy = override.get("recognition_policy")
+            policy_suffix = f", policy {override_policy}" if override_policy else ""
+            source_notes.append(
+                f"{task_name.capitalize()} fixtures {','.join(fixture_ids)} overridden from "
+                f"build123d-mcp {override_mcp}, harness {override_harness[:12]}"
+                f"{policy_suffix}"
+            )
+    return source_notes
+
+
 def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
     """Build the upload-ready zip: meta.json + every fixture dir at the root.
 
@@ -205,29 +249,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
         )
     task_sources = rm.get("task_sources")
     if isinstance(task_sources, dict) and task_sources:
-        source_notes = []
-        for task_name in ("generation", "editing"):
-            source = task_sources.get(task_name)
-            if not isinstance(source, dict):
-                continue
-            count = source.get("fixture_count", "?")
-            action = "reused unchanged from" if source.get("reused") else "from"
-            source_mcp = source.get("mcp_version", "unknown")
-            source_mcp_commit = source.get("mcp_git_commit")
-            source_revision = (
-                f" @ {source_mcp_commit[:12]}"
-                if source_mcp_commit
-                and source_mcp_commit not in {"unknown", "not-applicable"}
-                else ""
-            )
-            source_harness = source.get("harness_commit", "unknown")
-            source_agent = source.get("agent", "")
-            agent_suffix = f", {source_agent}" if source_agent else ""
-            source_notes.append(
-                f"{task_name.capitalize()}: {count} outputs {action} build123d-mcp "
-                f"{source_mcp}{source_revision}, harness {source_harness[:12]}"
-                f"{agent_suffix}"
-            )
+        source_notes = describe_task_sources(task_sources)
         notes = (
             f"Mixed-task package. {'; '.join(source_notes)}. "
             f"Model {model_desc}; {n_out}/{len(ids)} fixtures produced."

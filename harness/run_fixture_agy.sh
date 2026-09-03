@@ -89,6 +89,7 @@ echo "prompt:  $PROMPT_STYLE"
 cd "$WORK"
 uv tool run --python 3.12 "$MCP_SPEC" --version >/dev/null 2>&1 || true
 
+PROMPT_TEXT="$(< prompt.txt)"
 if [[ "$PROMPT_STYLE" == "official-baseline-minimal-mcp" && "$TASK" == "generation" ]]; then
   PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. Inspect input.png and call the build123d MCP prepare_drawing tool exactly once near the start. Inspect its labelled overview and only relevant crops with the available image-viewing tool; use crop_drawing for an exact enlarged region when a callout or profile remains ambiguous. Then make a concise, concrete CAD implementation plan covering dimensions, body family, construction order, validation, and the final output.step export. This planning turn may create drawing-evidence PNGs but must not create model.py, modify CAD geometry, or export output.step. Do not delegate to subagents and do not use the browser or web. Return a plan executable immediately in the next turn."
   PROMPT_TEXT="$(< system_prompt.txt)
@@ -98,7 +99,6 @@ elif [[ "$TASK" == "editing" && "$FORCE_RECOGNITION" == "1" ]]; then
   PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. Inspect input.png, input.step, edit_description.txt, and renders/ using read-only file and image tools. Import input.step into the build123d MCP as object_name='part', then you MUST call recognise_features(object_name='part') once with families omitted for the compact inventory before manually walking topology. After reading that inventory, call recognise_features again with only the family or families relevant to the requested edit when any are available, and use returned feature records or exact face evidence to resolve the target. An explicit empty family is evidence of a recogniser miss: record it and continue with conventional inspection rather than substituting a nearby feature. Then make a concise, concrete CAD implementation plan covering the confirmed target, dimensions, construction order, validation, and final output.step export. This planning turn may import and inspect geometry but must not modify it or export output.step. Do not delegate to subagents and do not use the browser or web. Do not finish the plan before the required compact-inventory recognise_features call has completed."
 else
   PLAN_INSTRUCTION="The only project workspace for this fixture is $WORK. First inspect its input.png and, when present, input.step, edit_description.txt, and renders/ using read-only file and image tools. Then make a concise, concrete CAD implementation plan. Resolve the visible dimensions, target features, construction order, validation checks, and final export path. This is the planning turn: do not modify files or geometry yet. Do not delegate to subagents and do not use the browser or web. Return a final plan that can be executed immediately in the next turn."
-  PROMPT_TEXT="$(< prompt.txt)"
 fi
 
 agy --print "$PLAN_INSTRUCTION

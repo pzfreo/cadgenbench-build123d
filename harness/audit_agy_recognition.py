@@ -21,10 +21,40 @@ def _arguments(step: dict) -> dict:
     return parameters.get("Arguments", parameters) or {}
 
 
+def _tool_output(step: dict) -> str:
+    output = step.get("tool_info", {}).get("output") or ""
+    candidates: list[Path] = []
+    match = re.search(r"file at file://([^\s]+output\.txt)", output)
+    if match:
+        candidates.append(Path("/" + match.group(1).lstrip("/")))
+    conversation = step.get("conversation_id")
+    index = step.get("step_index")
+    if conversation is not None and index is not None:
+        candidates.append(
+            Path.home()
+            / ".gemini"
+            / "antigravity-cli"
+            / "brain"
+            / str(conversation)
+            / ".system_generated"
+            / "steps"
+            / str(index)
+            / "output.txt"
+        )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.read_text(errors="replace")
+    return output
+
+
 def audit(path: Path) -> dict:
     recognition_calls = 0
     inventory_calls = 0
     targeted_calls = 0
+    targeted_hits = 0
+    targeted_misses = 0
+    targeted_errors = 0
+    targeted_unknown = 0
     face_resolution_calls = 0
     imported_part = False
     recognition_after_import = False
@@ -50,6 +80,17 @@ def audit(path: Path) -> dict:
                 inventory_calls += 1
             else:
                 targeted_calls += 1
+                try:
+                    result = json.loads(_tool_output(step))
+                except (json.JSONDecodeError, OSError):
+                    targeted_unknown += 1
+                else:
+                    if result.get("error"):
+                        targeted_errors += 1
+                    elif result.get("returned", 0) > 0:
+                        targeted_hits += 1
+                    else:
+                        targeted_misses += 1
         elif name == "execute":
             code = str(arguments.get("code", ""))
             face_resolution_calls += len(re.findall(r"\brecognition_faces\s*\(", code))
@@ -58,12 +99,17 @@ def audit(path: Path) -> dict:
     # A target-specific query must be followed by an attempted resolver call.
     # If the inventory itself failed and no target query was possible, retain a
     # truthful audit without forcing the agent to invent an unsupported family.
-    resolution_requirement_satisfied = targeted_calls == 0 or face_resolution_calls > 0
+    resolution_required = targeted_hits > 0 or targeted_unknown > 0
+    resolution_requirement_satisfied = not resolution_required or face_resolution_calls > 0
     return {
         "imported_part": imported_part,
         "recognition_calls": recognition_calls,
         "inventory_calls": inventory_calls,
         "targeted_calls": targeted_calls,
+        "targeted_hits": targeted_hits,
+        "targeted_misses": targeted_misses,
+        "targeted_errors": targeted_errors,
+        "targeted_unknown": targeted_unknown,
         "recognition_faces_calls": face_resolution_calls,
         "recognition_completed": recognition_completed,
         "resolution_requirement_satisfied": resolution_requirement_satisfied,

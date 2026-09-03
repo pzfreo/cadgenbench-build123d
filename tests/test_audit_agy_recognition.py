@@ -4,7 +4,7 @@ from pathlib import Path
 from harness.audit_agy_recognition import audit
 
 
-def _event(name: str, parameters: dict) -> str:
+def _event(name: str, parameters: dict, output: str = "") -> str:
     return json.dumps(
         {
             "event": "step_update",
@@ -16,7 +16,8 @@ def _event(name: str, parameters: dict) -> str:
                     "parameters": {
                         "ToolName": name,
                         "Arguments": parameters,
-                    }
+                    },
+                    "output": output,
                 },
             },
         }
@@ -30,7 +31,11 @@ def test_audit_accepts_same_turn_recognition_and_resolution(tmp_path: Path):
             [
                 _event("import_cad_file", {"name": "part", "path": "input.step"}),
                 _event("recognise_features", {"object_name": "part"}),
-                _event("recognise_features", {"object_name": "part", "families": "holes"}),
+                _event(
+                    "recognise_features",
+                    {"object_name": "part", "families": "holes"},
+                    json.dumps({"matched": 1, "returned": 1}),
+                ),
                 _event(
                     "execute",
                     {"code": "faces = recognition_faces('@feature[r1/holes/0]')"},
@@ -53,7 +58,11 @@ def test_audit_rejects_targeted_recognition_without_resolution(tmp_path: Path):
             [
                 _event("import_cad_file", {"name": "part", "path": "input.step"}),
                 _event("recognise_features", {"object_name": "part"}),
-                _event("recognise_features", {"object_name": "part", "families": "bosses"}),
+                _event(
+                    "recognise_features",
+                    {"object_name": "part", "families": "bosses"},
+                    json.dumps({"matched": 1, "returned": 1}),
+                ),
             ]
         )
     )
@@ -62,6 +71,28 @@ def test_audit_rejects_targeted_recognition_without_resolution(tmp_path: Path):
 
     assert result["recognition_completed"] is True
     assert result["resolution_requirement_satisfied"] is False
+
+
+def test_audit_accepts_targeted_recogniser_miss_without_resolution(tmp_path: Path):
+    stream = tmp_path / "stream.jsonl"
+    stream.write_text(
+        "\n".join(
+            [
+                _event("import_cad_file", {"name": "part", "path": "input.step"}),
+                _event("recognise_features", {"object_name": "part"}),
+                _event(
+                    "recognise_features",
+                    {"object_name": "part", "families": "pockets"},
+                    json.dumps({"matched": 0, "returned": 0, "features": []}),
+                ),
+            ]
+        )
+    )
+
+    result = audit(stream)
+
+    assert result["targeted_misses"] == 1
+    assert result["resolution_requirement_satisfied"] is True
 
 
 def test_audit_supports_direct_agy_tool_names(tmp_path: Path):

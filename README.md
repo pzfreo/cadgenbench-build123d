@@ -191,6 +191,21 @@ features, and bounds conventional fallback after a miss. Each fixture writes
 `recognition_audit.json`; `run_meta.json` records the selected recognition
 policy. `CGB_FORCE_RECOGNITION=1` remains the legacy planning-turn policy.
 
+Broken-input experiments can require a clean repaired baseline before strict
+recognition without weakening or special-casing `b123d-recognisers`:
+
+```bash
+CGB_RECOGNITION_POLICY=repair-first-then-strict-recognition \
+  ./run_sweep.sh splits/retest-202-240-timeout.txt \
+  build123d-mcp-repair-first-broken2 \
+  agy/gemini-3.8-flash-high \
+  'build123d-mcp @ file:///path/to/build123d-mcp' 2 600
+```
+
+This policy uses the MCP's generic defect locator and repair ladder, requires a
+gate-clean STEP round trip before calling the unchanged strict recogniser, and
+contains no fixture IDs, face indices, coordinates, or expected constructions.
+
 ### Gemini through Codex + Vercel AI Gateway
 
 `google/*` model ids reuse the Codex driver and its MCP/image orchestration but

@@ -203,10 +203,40 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
             f"Model {model_desc}{provider_desc} + build123d-mcp {mcp_version}{mcp_revision} "
             "(gate-equipped MCP server)"
         )
-    notes = (
-        f"{system_desc}. Harness + prompts: cadgenbench-build123d @ {commit[:12]}. "
-        f"{n_out}/{len(ids)} fixtures produced."
-    )[:500]
+    task_sources = rm.get("task_sources")
+    if isinstance(task_sources, dict) and task_sources:
+        source_notes = []
+        for task_name in ("generation", "editing"):
+            source = task_sources.get(task_name)
+            if not isinstance(source, dict):
+                continue
+            count = source.get("fixture_count", "?")
+            action = "reused unchanged from" if source.get("reused") else "from"
+            source_mcp = source.get("mcp_version", "unknown")
+            source_mcp_commit = source.get("mcp_git_commit")
+            source_revision = (
+                f" @ {source_mcp_commit[:12]}"
+                if source_mcp_commit
+                and source_mcp_commit not in {"unknown", "not-applicable"}
+                else ""
+            )
+            source_harness = source.get("harness_commit", "unknown")
+            source_agent = source.get("agent", "")
+            agent_suffix = f", {source_agent}" if source_agent else ""
+            source_notes.append(
+                f"{task_name.capitalize()}: {count} outputs {action} build123d-mcp "
+                f"{source_mcp}{source_revision}, harness {source_harness[:12]}"
+                f"{agent_suffix}"
+            )
+        notes = (
+            f"Mixed-task package. {'; '.join(source_notes)}. "
+            f"Model {model_desc}; {n_out}/{len(ids)} fixtures produced."
+        )[:500]
+    else:
+        notes = (
+            f"{system_desc}. Harness + prompts: cadgenbench-build123d @ {commit[:12]}. "
+            f"{n_out}/{len(ids)} fixtures produced."
+        )[:500]
     meta = {
         "submitter_name": submitter,
         "submission_name": name,

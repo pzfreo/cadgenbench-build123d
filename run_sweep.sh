@@ -168,6 +168,20 @@ else
   MCP_VERSION="$(uv tool run --python 3.12 "$MCP_SPEC" --version 2>/dev/null | awk '{print $NF}' || true)"
   [[ -n "$MCP_VERSION" ]] || MCP_VERSION="unknown"
 fi
+MCP_GIT_COMMIT="not-applicable"
+MCP_GIT_BRANCH="not-applicable"
+MCP_GIT_DIRTY=false
+if [[ "$MCP_SPEC" == *"file://"* ]]; then
+  MCP_LOCAL_PATH="${MCP_SPEC##*file://}"
+  if git -C "$MCP_LOCAL_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    MCP_GIT_COMMIT="$(git -C "$MCP_LOCAL_PATH" rev-parse HEAD)"
+    MCP_GIT_BRANCH="$(git -C "$MCP_LOCAL_PATH" rev-parse --abbrev-ref HEAD)"
+    [[ -z "$(git -C "$MCP_LOCAL_PATH" status --porcelain)" ]] || MCP_GIT_DIRTY=true
+  else
+    MCP_GIT_COMMIT="unknown"
+    MCP_GIT_BRANCH="unknown"
+  fi
+fi
 
 # Agy currently stores MCP servers in its user-level configuration. Configure
 # the exact pinned command once before the parallel fan-out; individual Agy
@@ -200,6 +214,9 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
   "prompt_style": "${CGB_PROMPT_STYLE:-default}",
   "mcp_spec": "$MCP_SPEC",
   "mcp_version": "$MCP_VERSION",
+  "mcp_git_commit": "$MCP_GIT_COMMIT",
+  "mcp_git_branch": "$MCP_GIT_BRANCH",
+  "mcp_git_dirty": $MCP_GIT_DIRTY,
   "exec_timeout": "${EXEC_TIMEOUT:-default}",
   "git_commit": "$GIT_COMMIT",
   "git_branch": "$GIT_BRANCH",
@@ -211,7 +228,7 @@ JSON
 [[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
 
 echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, provider=$MODEL_PROVIDER, mcp=$MCP_SPEC, exec-timeout=${EXEC_TIMEOUT:-default}, recognition=$RECOGNITION_POLICY"
-echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION -> results/$RUN/run_meta.json"
+echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION@$MCP_GIT_COMMIT (dirty=$MCP_GIT_DIRTY) -> results/$RUN/run_meta.json"
 echo
 
 printf '%s\n' "$FIXES" | xargs -P "$JOBS" -I{} bash "$HERE/run_sweep.sh" --one {} "$RUN" "$MODEL" "$MCP_SPEC" "$EXEC_TIMEOUT"

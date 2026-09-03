@@ -174,6 +174,12 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
     if driver == "claude-code" and credential:
         provider_desc += f" using {credential}"
     mcp_version = _mcp_version(manifest) or "unknown"
+    mcp_commit = rm.get("mcp_git_commit")
+    mcp_revision = (
+        f" @ {mcp_commit[:12]}"
+        if mcp_commit and mcp_commit not in {"unknown", "not-applicable"}
+        else ""
+    )
     commit = rm.get("git_commit", "unknown")
 
     ids = []
@@ -194,7 +200,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
         system_desc = f"Model {model_desc}{provider_desc} + direct build123d/Python (no MCP server)"
     else:
         system_desc = (
-            f"Model {model_desc}{provider_desc} + build123d-mcp {mcp_version} "
+            f"Model {model_desc}{provider_desc} + build123d-mcp {mcp_version}{mcp_revision} "
             "(gate-equipped MCP server)"
         )
     notes = (

@@ -309,7 +309,10 @@ def main():
     if not root.is_dir():
         sys.exit(f"not a directory: {root}")
 
-    fixtures = sorted((d for d in root.iterdir() if d.is_dir()), key=lambda d: d.name)
+    fixtures = sorted(
+        (d for d in root.iterdir() if d.is_dir() and d.name.isdigit()),
+        key=lambda d: int(d.name),
+    )
     if not fixtures:
         sys.exit(f"no <id>/ subdirectories under {root}")
 

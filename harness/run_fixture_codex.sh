@@ -103,8 +103,13 @@ OUT="$WORK/output.step"
 if [[ -f "$FIX/edit_description.txt" ]]; then
   cp "$FIX/edit_description.txt" "$WORK"/ 2>/dev/null || true
   cp -R "$FIX/renders" "$WORK"/ 2>/dev/null || true
+  case "${CGB_PROMPT_STYLE:-default}" in
+    default|official-baseline-minimal-mcp) EDIT_PROMPT="$HERE/prompt_editing.txt" ;;
+    mcp-guided-compact) EDIT_PROMPT="$HERE/prompt_editing_mcp_guided_compact.txt" ;;
+    *) echo "ERROR: unsupported CGB_PROMPT_STYLE=${CGB_PROMPT_STYLE}"; exit 1 ;;
+  esac
   python3 -c "import sys,pathlib; t=pathlib.Path(sys.argv[1]).read_text(); print(t.replace('{EDIT}', pathlib.Path(sys.argv[2]).read_text().strip()).replace('{OUTPUT}', sys.argv[3]), end='')" \
-    "$HERE/prompt_editing.txt" "$FIX/edit_description.txt" "$OUT" > "$WORK/prompt.txt"
+    "$EDIT_PROMPT" "$FIX/edit_description.txt" "$OUT" > "$WORK/prompt.txt"
   TASK="editing"
 else
   sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation.txt" > "$WORK/prompt.txt"

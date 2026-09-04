@@ -12,6 +12,8 @@ mkdir -p "$TMP/in" "$TMP/out"
 printf '%s\n' 'Remove the target hole.' > "$TMP/in/edit_description.txt"
 
 PATH="$ROOT/tests/fake-bin-recognition:$PATH" \
+CGB_PROMPT_STYLE=mcp-guided-compact \
+FAKE_EXPECT_BANK=1 \
   "$ROOT/harness/run_fixture.sh" \
   "$TMP/in" "$TMP/out" claude-opus-5:xhigh build123d-mcp==0.3.84 240 \
   > "$TMP/driver.log" 2>&1

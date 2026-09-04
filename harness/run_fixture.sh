@@ -78,8 +78,13 @@ if [[ -f "$FIX/edit_description.txt" ]]; then
   # build the editing prompt (literal substitution — the edit text is arbitrary).
   cp "$FIX/edit_description.txt" "$WORK"/ 2>/dev/null || true
   cp -R "$FIX/renders" "$WORK"/ 2>/dev/null || true
+  case "${CGB_PROMPT_STYLE:-default}" in
+    default|official-baseline-minimal-mcp) EDIT_PROMPT="$HERE/prompt_editing.txt" ;;
+    mcp-guided-compact) EDIT_PROMPT="$HERE/prompt_editing_mcp_guided_compact.txt" ;;
+    *) echo "ERROR: unsupported CGB_PROMPT_STYLE=${CGB_PROMPT_STYLE}"; exit 1 ;;
+  esac
   python3 -c "import sys,pathlib; t=pathlib.Path(sys.argv[1]).read_text(); print(t.replace('{EDIT}', pathlib.Path(sys.argv[2]).read_text().strip()).replace('{OUTPUT}', sys.argv[3]), end='')" \
-    "$HERE/prompt_editing.txt" "$FIX/edit_description.txt" "$OUT" > "$WORK/prompt.txt"
+    "$EDIT_PROMPT" "$FIX/edit_description.txt" "$OUT" > "$WORK/prompt.txt"
   TASK="editing"
 else
   sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation.txt" > "$WORK/prompt.txt"
@@ -154,7 +159,7 @@ cd "$WORK"
 # "conforms: true" result reliably reads to the model as a stop signal regardless
 # of prompt caveats saying otherwise (build123d-mcp#362). The Codex driver has no
 # equivalent allowlist, so this can only be hard-blocked here.
-ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__find_bored_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects,mcp__build123d__repair_advice,mcp__build123d__recognise_features"
+ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__bank_candidate,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__find_bored_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects,mcp__build123d__repair_advice,mcp__build123d__recognise_features"
 
 # Eagerly load the build123d MCP tool schemas instead of deferring them behind
 # the ToolSearch tool (Claude Code's default). Deferral cost ~3 ToolSearch calls

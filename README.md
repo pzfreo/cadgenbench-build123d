@@ -212,6 +212,14 @@ transcript mid-run, or retry missing tool use. It writes a non-blocking
 `recognition_audit.json` after the run so recognition uptake remains measurable
 without changing agent control flow.
 
+For the shorter server-guided variant, set
+`CGB_PROMPT_STYLE=mcp-guided-compact`. It uses the generic
+`prompt_editing_mcp_guided_compact.txt`: `bank_candidate()` atomically preserves
+the last gate-clean STEP, failed baselines route through the MCP locator and
+repair advice, and recognition begins only after a clean baseline exists. This
+is still one ordinary model turn; tool use is prompted and audited, not forced
+by harness control flow. The selected prompt style is recorded in `run_meta.json`.
+
 ### Gemini through Codex + Vercel AI Gateway
 
 `google/*` model ids reuse the Codex driver and its MCP/image orchestration but

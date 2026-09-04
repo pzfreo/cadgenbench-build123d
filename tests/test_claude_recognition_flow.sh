@@ -12,16 +12,25 @@ mkdir -p "$TMP/in" "$TMP/out"
 printf '%s\n' 'Remove the target hole.' > "$TMP/in/edit_description.txt"
 
 PATH="$ROOT/tests/fake-bin-recognition:$PATH" \
-CGB_RECOGNITION_POLICY=repair-first-then-strict-recognition \
   "$ROOT/harness/run_fixture.sh" \
   "$TMP/in" "$TMP/out" claude-opus-5:xhigh build123d-mcp==0.3.84 240 \
   > "$TMP/driver.log" 2>&1
 
 test -s "$TMP/out/output.step"
 jq -e '.recognition_completed and .resolution_requirement_satisfied' \
-  "$TMP/out/recognition_preflight_audit.json" >/dev/null
-jq -e '.recognition_completed and .resolution_requirement_satisfied' \
   "$TMP/out/recognition_audit.json" >/dev/null
 grep -q 'exited 1 despite a successful terminal event' "$TMP/driver.log"
 grep -q 'edited and exported' "$TMP/out/stream.jsonl"
+
+PATH="$ROOT/tests/fake-bin-recognition:$PATH" \
+FAKE_CLAUDE_SKIP_RECOGNITION=1 \
+  "$ROOT/harness/run_fixture.sh" \
+  "$TMP/in" "$TMP/out-no-recognition" claude-opus-5:xhigh build123d-mcp==0.3.84 240 \
+  > "$TMP/driver-no-recognition.log" 2>&1
+
+test -s "$TMP/out-no-recognition/output.step"
+jq -e '.recognition_completed == false' \
+  "$TMP/out-no-recognition/recognition_audit.json" >/dev/null
+grep -q 'prompt-guided recognition workflow was not fully used' \
+  "$TMP/driver-no-recognition.log"
 echo "Claude recognition flow integration: PASS"

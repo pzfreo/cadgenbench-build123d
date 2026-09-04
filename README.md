@@ -205,14 +205,12 @@ CGB_RECOGNITION_POLICY=repair-first-then-strict-recognition \
 This policy uses the MCP's generic defect locator and repair ladder, requires a
 gate-clean STEP round trip before calling the unchanged strict recogniser, and
 contains no fixture IDs, face indices, coordinates, or expected constructions.
-The same `CGB_RECOGNITION_POLICY` values work with the Claude Code driver. Claude
-runs use a mandatory recognition-preflight turn followed by a resumed edit turn
-in one persistent MCP session. The preflight must pass its transcript audit
-before editing is allowed; one corrective preflight is attempted when needed.
-The driver exposes `recognise_features`, `find_bored_bosses`, and
-`repair_advice`, resolves returned handles through `recognition_faces()` inside
-`execute()`, and writes `recognition_preflight_audit.json` plus the final
-`recognition_audit.json` from the raw Claude transcript.
+Claude editing runs use one ordinary agent turn and a static editing prompt. The
+prompt tells the agent when to use `repair_advice`, `recognise_features`, and
+`recognition_faces()`; the harness does not force a planning turn, inspect the
+transcript mid-run, or retry missing tool use. It writes a non-blocking
+`recognition_audit.json` after the run so recognition uptake remains measurable
+without changing agent control flow.
 
 ### Gemini through Codex + Vercel AI Gateway
 

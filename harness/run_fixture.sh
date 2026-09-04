@@ -87,17 +87,12 @@ else
   TASK="generation"
 fi
 
-RECOGNITION_INSTRUCTION=""
+BASE_PROMPT="$(cat "$WORK/prompt.txt")"
+RECOGNITION_PREFLIGHT=""
 if [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-execution" ]]; then
-  RECOGNITION_INSTRUCTION="Recognition policy (this overrides any less-strict generic workflow below): import input.step as object_name='part', validate it, export the unchanged valid baseline to $OUT, and save a baseline snapshot. Before manually walking topology, you MUST call recognise_features(object_name='part') once with families omitted, then call it with only the relevant supported family or families from the returned targetable inventory. When a targeted call returns candidate features, immediately use recognition_faces('@feature[...]') inside execute() in this same MCP session and operate on or inspect the returned Face objects directly. Do not use Python list.index() or assume object identity with part.faces(). An explicit empty family is a recogniser miss; record it and use a bounded conventional fallback. After editing, compare against a freshly imported immutable input, validate, export exactly to $OUT, re-import that STEP, and repeat the invariant check. Reject the candidate and retain the baseline if unrelated geometry changed."
+  RECOGNITION_PREFLIGHT="Mandatory recognition preflight. This is the first of two turns and overrides any instruction below to perform the requested edit now. Import input.step as object_name='part', validate it, export the unchanged valid baseline to $OUT, and save a baseline snapshot. Before manually walking topology, call recognise_features(object_name='part') once with families omitted, then call it with only the relevant supported family or families from the returned targetable inventory. When a targeted call returns candidates, immediately use recognition_faces('@feature[...]') inside execute() in this same MCP session and inspect the returned Face objects directly. Do not use Python list.index() or assume object identity with part.faces(). An explicit empty family is a recogniser miss; record it and use bounded conventional inspection to plan the edit. Do not apply the requested feature edit in this turn. Finish with a concise edit plan based on the recognition evidence and leave the clean baseline, objects, handles, and MCP session intact for the resumed execution turn."
 elif [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "repair-first-then-strict-recognition" ]]; then
-  RECOGNITION_INSTRUCTION="Repair-first strict-recognition policy (this overrides any conflicting generic baseline instruction below): import input.step as object_name='part' and validate it. If it fails, do not bank or describe that invalid import as a clean baseline. Call locate_gate_defects(object_name='part') and repair_advice using the reported defect classes, then follow the general repair ladder: diagnose exact local topology, make the smallest defensible repair, validate, export the repaired candidate to a temporary STEP, re-import it, and validate the round trip. Reject repairs that materially change the envelope, components, or volume outside the defect tolerance. Use geometric/topological selection on each fresh import rather than fixed face indices. Continue until a gate-clean round-tripped solid exists; do not attempt the requested edit on an invalid baseline. Register the clean repaired solid as object_name='part', save a repaired-baseline snapshot, and export it to $OUT as the safe floor. Only then call recognise_features(object_name='part') with families omitted and make a targeted family call using only relevant targetable families. If candidates are returned, use recognition_faces('@feature[...]') inside execute() in this same MCP session and operate on or inspect the returned Face objects directly. An explicit empty family is a recogniser miss; record it and use a bounded conventional fallback. Apply the requested edit to the repaired baseline, compare it against that baseline and a freshly imported immutable input, validate, export exactly to $OUT, re-import, and validate again before promotion. A changed candidate that fails the round-trip gate must never replace the clean repaired baseline."
-fi
-PROMPT_TEXT="$(cat "$WORK/prompt.txt")"
-if [[ -n "$RECOGNITION_INSTRUCTION" ]]; then
-  PROMPT_TEXT="$RECOGNITION_INSTRUCTION
-
-$PROMPT_TEXT"
+  RECOGNITION_PREFLIGHT="Mandatory repair-first recognition preflight. This is the first of two turns and overrides any instruction below to perform the requested edit now. Import input.step as object_name='part' and validate it. If it fails, do not bank or describe that invalid import as clean. Call locate_gate_defects(object_name='part') and repair_advice using the reported defect classes; make the smallest defensible evidence-based repair, validate it, export it to a temporary STEP, re-import it, and validate the round trip. Reject repairs that materially change the envelope, components, or volume outside the defect tolerance. Continue until a gate-clean round-tripped solid exists. Register that repaired solid as object_name='part', save a repaired-baseline snapshot, and export it to $OUT as the safe floor. Only then call recognise_features(object_name='part') with families omitted and make a targeted family call using only relevant targetable families. If candidates are returned, immediately use recognition_faces('@feature[...]') inside execute() in this same MCP session and inspect the returned Face objects directly. An explicit empty family is a recogniser miss; record it and use bounded conventional inspection to plan the edit. Do not apply the requested feature edit in this turn. Finish with a concise edit plan based on the recognition evidence and leave the repaired baseline, objects, handles, and MCP session intact for the resumed execution turn."
 fi
 
 # The benchmark runs in a trusted, isolated environment, so we launch the MCP
@@ -258,48 +253,76 @@ CLAUDE_ARGS=(
 : > stream.jsonl
 SESSION_ID=""
 ATTEMPT=1
-while true; do
-  ATTEMPT_LOG="attempt.${ATTEMPT}.stream.jsonl"
-  set +e
-  if [[ -z "$SESSION_ID" ]]; then
-    claude -p "$PROMPT_TEXT" "${CLAUDE_ARGS[@]}" > "$ATTEMPT_LOG" 2>&1
-  else
-    claude -p \
-      "Subscription quota interrupted the previous turn. Continue the same fixture from exactly where you stopped. The workspace and build123d MCP session were deliberately kept alive; inspect session_state if needed, then finish validation and export to $OUT." \
-      --resume "$SESSION_ID" \
-      "${CLAUDE_ARGS[@]}" > "$ATTEMPT_LOG" 2>&1
-  fi
-  CLAUDE_RC=$?
-  set -e
 
-  cat "$ATTEMPT_LOG" >> stream.jsonl
-  if [[ -z "$SESSION_ID" ]]; then
-    # The init event normally arrives first, but rejected rate-limit events also
-    # carry the conversation id. Accept either so an unusually early rejection
-    # can still be resumed rather than abandoning the fixture.
-    SESSION_ID="$(jq -r 'select(.session_id? | type == "string") | .session_id' "$ATTEMPT_LOG" 2>/dev/null | head -n1)"
-    [[ "$SESSION_ID" != "null" ]] || SESSION_ID=""
-  fi
+claude_reported_success() {
+  jq -e 'select(.type == "result" and .subtype == "success" and ((.is_error // false) == false))' "$1" >/dev/null 2>&1
+}
 
-  if quota_rejected "$ATTEMPT_LOG"; then
-    [[ -n "$SESSION_ID" ]] || { echo "ERROR: quota rejection arrived without a resumable Claude session id"; exit 1; }
-    RESET_EPOCH="$(quota_reset_epoch "$ATTEMPT_LOG")"
-    echo "quota rejected: retaining fixture process, workspace, Claude conversation $SESSION_ID, and live MCP session"
-    wait_for_quota_reset "$RESET_EPOCH"
+run_claude_turn() {
+  local turn_name="$1" turn_prompt="$2" attempt_log claude_rc reset_epoch
+  while true; do
+    attempt_log="attempt.${ATTEMPT}.${turn_name}.stream.jsonl"
+    set +e
+    if [[ -z "$SESSION_ID" ]]; then
+      claude -p "$turn_prompt" "${CLAUDE_ARGS[@]}" > "$attempt_log" 2>&1
+    else
+      claude -p "$turn_prompt" --resume "$SESSION_ID" "${CLAUDE_ARGS[@]}" > "$attempt_log" 2>&1
+    fi
+    claude_rc=$?
+    set -e
+
+    cat "$attempt_log" >> stream.jsonl
+    if [[ -z "$SESSION_ID" ]]; then
+      # The init event normally arrives first, but rejected rate-limit events also
+      # carry the conversation id. Accept either so an unusually early rejection
+      # can still be resumed rather than abandoning the fixture.
+      SESSION_ID="$(jq -r 'select(.session_id? | type == "string") | .session_id' "$attempt_log" 2>/dev/null | head -n1)"
+      [[ "$SESSION_ID" != "null" ]] || SESSION_ID=""
+    fi
+
+    if quota_rejected "$attempt_log"; then
+      [[ -n "$SESSION_ID" ]] || { echo "ERROR: quota rejection arrived without a resumable Claude session id"; return 1; }
+      reset_epoch="$(quota_reset_epoch "$attempt_log")"
+      echo "quota rejected: retaining fixture process, workspace, Claude conversation $SESSION_ID, and live MCP session"
+      wait_for_quota_reset "$reset_epoch"
+      turn_prompt="Subscription quota interrupted the $turn_name turn. Continue exactly where you stopped. The workspace and build123d MCP session were deliberately kept alive; inspect session_state if needed and complete that turn's instructions."
+      ATTEMPT=$((ATTEMPT + 1))
+      continue
+    fi
+
+    if (( claude_rc != 0 )) && ! claude_reported_success "$attempt_log"; then
+      echo "ERROR: Claude $turn_name turn exited $claude_rc without a successful terminal event"
+      return "$claude_rc"
+    fi
+    if (( claude_rc != 0 )); then
+      echo "WARNING: Claude $turn_name turn exited $claude_rc despite a successful terminal event; accepting the transcript result"
+    fi
+    rm -f "$attempt_log"
     ATTEMPT=$((ATTEMPT + 1))
-    continue
+    return 0
+  done
+}
+
+if [[ -n "$RECOGNITION_PREFLIGHT" ]]; then
+  run_claude_turn "recognition-preflight" "$RECOGNITION_PREFLIGHT
+
+$BASE_PROMPT" || exit $?
+  python3 "$HERE/audit_claude_recognition.py" stream.jsonl > recognition_preflight_audit.json
+  if ! jq -e '.recognition_completed and .resolution_requirement_satisfied' recognition_preflight_audit.json >/dev/null; then
+    echo "required recognition preflight missing; issuing one corrective preflight turn"
+    run_claude_turn "recognition-corrective" "The recognition preflight audit failed. Do not apply the requested edit. Complete the missing preflight now in the existing MCP session: ensure the clean baseline is registered as object_name='part'; call recognise_features(object_name='part') once with families omitted; call it again with only the relevant targetable family or families; and, if candidates are returned, call recognition_faces('@feature[...]') inside execute() to inspect their exact faces. Finish with the evidence-backed edit plan, leaving geometry unchanged from the clean baseline." || exit $?
+    python3 "$HERE/audit_claude_recognition.py" stream.jsonl > recognition_preflight_audit.json
+  fi
+  if ! jq -e '.recognition_completed and .resolution_requirement_satisfied' recognition_preflight_audit.json >/dev/null; then
+    cp recognition_preflight_audit.json recognition_audit.json
+    echo "ERROR: required recognition preflight not satisfied after corrective turn"
+    exit 1
   fi
 
-  rm -f "$ATTEMPT_LOG"
-  (( CLAUDE_RC == 0 )) || exit "$CLAUDE_RC"
-  break
-done
-
-if [[ "$TASK" == "editing" && ( "$RECOGNITION_POLICY" == "required-in-edit-execution" || "$RECOGNITION_POLICY" == "repair-first-then-strict-recognition" ) ]]; then
+  run_claude_turn "edit-execution" "The mandatory recognition preflight passed. Now execute the requested edit using the repaired baseline and recognition evidence already established in this same MCP session. Use recognition_faces() handles from the successful targeted call while they remain valid; if the source object was replaced, recognise again before selecting faces. Preserve the banked baseline unless a changed candidate is proven better. Compare against the repaired baseline and a freshly imported immutable input, validate, export exactly to $OUT, re-import the written STEP, and validate again before promotion. Do not merely restate the plan." || exit $?
   python3 "$HERE/audit_claude_recognition.py" stream.jsonl > recognition_audit.json
-  if ! jq -e '.recognition_completed and .resolution_requirement_satisfied' recognition_audit.json >/dev/null; then
-    echo "WARNING: execution-phase recognition policy was not fully satisfied; see recognition_audit.json"
-  fi
+else
+  run_claude_turn "main" "$BASE_PROMPT" || exit $?
 fi
 
 echo

@@ -21,6 +21,7 @@ WORK="${2:?work dir}"
 MODEL="${3:-claude-opus-4-8}"
 MCP_SPEC="${4:-build123d-mcp==0.3.81}"
 EXEC_TIMEOUT="${5:-}"
+RECOGNITION_POLICY="${CGB_RECOGNITION_POLICY:-default}"
 
 # Optional reasoning-effort suffix on the model id: "claude-fable-5:xhigh" ->
 # model "claude-fable-5" + --effort xhigh (levels: low|medium|high|xhigh|max).
@@ -84,6 +85,19 @@ if [[ -f "$FIX/edit_description.txt" ]]; then
 else
   sed "s|{OUTPUT}|$OUT|g" "$HERE/prompt_generation.txt" > "$WORK/prompt.txt"
   TASK="generation"
+fi
+
+RECOGNITION_INSTRUCTION=""
+if [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-execution" ]]; then
+  RECOGNITION_INSTRUCTION="Recognition policy (this overrides any less-strict generic workflow below): import input.step as object_name='part', validate it, export the unchanged valid baseline to $OUT, and save a baseline snapshot. Before manually walking topology, you MUST call recognise_features(object_name='part') once with families omitted, then call it with only the relevant supported family or families from the returned targetable inventory. When a targeted call returns candidate features, immediately use recognition_faces('@feature[...]') inside execute() in this same MCP session and operate on or inspect the returned Face objects directly. Do not use Python list.index() or assume object identity with part.faces(). An explicit empty family is a recogniser miss; record it and use a bounded conventional fallback. After editing, compare against a freshly imported immutable input, validate, export exactly to $OUT, re-import that STEP, and repeat the invariant check. Reject the candidate and retain the baseline if unrelated geometry changed."
+elif [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "repair-first-then-strict-recognition" ]]; then
+  RECOGNITION_INSTRUCTION="Repair-first strict-recognition policy (this overrides any conflicting generic baseline instruction below): import input.step as object_name='part' and validate it. If it fails, do not bank or describe that invalid import as a clean baseline. Call locate_gate_defects(object_name='part') and repair_advice using the reported defect classes, then follow the general repair ladder: diagnose exact local topology, make the smallest defensible repair, validate, export the repaired candidate to a temporary STEP, re-import it, and validate the round trip. Reject repairs that materially change the envelope, components, or volume outside the defect tolerance. Use geometric/topological selection on each fresh import rather than fixed face indices. Continue until a gate-clean round-tripped solid exists; do not attempt the requested edit on an invalid baseline. Register the clean repaired solid as object_name='part', save a repaired-baseline snapshot, and export it to $OUT as the safe floor. Only then call recognise_features(object_name='part') with families omitted and make a targeted family call using only relevant targetable families. If candidates are returned, use recognition_faces('@feature[...]') inside execute() in this same MCP session and operate on or inspect the returned Face objects directly. An explicit empty family is a recogniser miss; record it and use a bounded conventional fallback. Apply the requested edit to the repaired baseline, compare it against that baseline and a freshly imported immutable input, validate, export exactly to $OUT, re-import, and validate again before promotion. A changed candidate that fails the round-trip gate must never replace the clean repaired baseline."
+fi
+PROMPT_TEXT="$(cat "$WORK/prompt.txt")"
+if [[ -n "$RECOGNITION_INSTRUCTION" ]]; then
+  PROMPT_TEXT="$RECOGNITION_INSTRUCTION
+
+$PROMPT_TEXT"
 fi
 
 # The benchmark runs in a trusted, isolated environment, so we launch the MCP
@@ -152,7 +166,7 @@ cd "$WORK"
 # "conforms: true" result reliably reads to the model as a stop signal regardless
 # of prompt caveats saying otherwise (build123d-mcp#362). The Codex driver has no
 # equivalent allowlist, so this can only be hard-blocked here.
-ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects"
+ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__find_bored_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects,mcp__build123d__repair_advice,mcp__build123d__recognise_features"
 
 # Eagerly load the build123d MCP tool schemas instead of deferring them behind
 # the ToolSearch tool (Claude Code's default). Deferral cost ~3 ToolSearch calls
@@ -248,7 +262,7 @@ while true; do
   ATTEMPT_LOG="attempt.${ATTEMPT}.stream.jsonl"
   set +e
   if [[ -z "$SESSION_ID" ]]; then
-    claude -p "$(cat prompt.txt)" "${CLAUDE_ARGS[@]}" > "$ATTEMPT_LOG" 2>&1
+    claude -p "$PROMPT_TEXT" "${CLAUDE_ARGS[@]}" > "$ATTEMPT_LOG" 2>&1
   else
     claude -p \
       "Subscription quota interrupted the previous turn. Continue the same fixture from exactly where you stopped. The workspace and build123d MCP session were deliberately kept alive; inspect session_state if needed, then finish validation and export to $OUT." \
@@ -280,6 +294,13 @@ while true; do
   (( CLAUDE_RC == 0 )) || exit "$CLAUDE_RC"
   break
 done
+
+if [[ "$TASK" == "editing" && ( "$RECOGNITION_POLICY" == "required-in-edit-execution" || "$RECOGNITION_POLICY" == "repair-first-then-strict-recognition" ) ]]; then
+  python3 "$HERE/audit_claude_recognition.py" stream.jsonl > recognition_audit.json
+  if ! jq -e '.recognition_completed and .resolution_requirement_satisfied' recognition_audit.json >/dev/null; then
+    echo "WARNING: execution-phase recognition policy was not fully satisfied; see recognition_audit.json"
+  fi
+fi
 
 echo
 if [[ -f output.step ]]; then

@@ -145,7 +145,7 @@ tail -n0 -f work/gpt55-v1/<id>_run/stream.jsonl \
 
 Two behavioural differences from the Claude path, both disclosed for honesty:
 Codex has no per-call tool allowlist, so the model sees all of build123d-mcp's
-tools (the Claude driver curates a 17-tool subset); and the prompts' "read
+tools (the Claude driver curates a 20-tool subset); and the prompts' "read
 `input.png`" / zoom-crop guidance is satisfied via `-i` + `view_image` rather
 than Claude Code's `Read` + `Bash`-crop. The prompts themselves are unchanged.
 
@@ -205,6 +205,11 @@ CGB_RECOGNITION_POLICY=repair-first-then-strict-recognition \
 This policy uses the MCP's generic defect locator and repair ladder, requires a
 gate-clean STEP round trip before calling the unchanged strict recogniser, and
 contains no fixture IDs, face indices, coordinates, or expected constructions.
+The same `CGB_RECOGNITION_POLICY` values work with the Claude Code driver. Claude
+runs use one persistent MCP session, expose `recognise_features`,
+`find_bored_bosses`, and `repair_advice`, resolve returned handles through
+`recognition_faces()` inside `execute()`, and write a Claude-native
+`recognition_audit.json` from the raw tool transcript.
 
 ### Gemini through Codex + Vercel AI Gateway
 

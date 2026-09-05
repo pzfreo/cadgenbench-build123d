@@ -305,6 +305,10 @@ ablations use `build123d-direct-<model>-<effort>`. An optional `--name` may add 
 suffix such as `-smoke6`, but the packager rejects names that do not retain the
 complete derived identity. ZIP packaging also fails rather than emitting
 ambiguous metadata when `run_meta.json`, the model, or the MCP version is absent.
+Use `--display-name` when the leaderboard's free-text `submission_name` should be
+more readable than the ZIP slug. The packager accepts spaces and punctuation but
+still requires the label to retain the stack, version, model, and effort tokens;
+the ZIP filename remains the canonical filesystem-safe name.
 
 ### Claude subscription quota recovery
 

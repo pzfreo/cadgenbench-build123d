@@ -3,6 +3,7 @@ import unittest
 from package_submission import (
     derive_submission_name,
     describe_task_sources,
+    resolve_display_name,
     resolve_submission_name,
 )
 
@@ -55,6 +56,16 @@ class SubmissionNameTests(unittest.TestCase):
                 manifest,
                 "build123d-mcp-0.3.83-fable-5.1-medium/other",
             )
+
+    def test_plain_english_display_name_preserves_identity(self):
+        manifest = self.manifest("gpt-6-astra", "high", "0.3.85.dev0")
+        requested = "build123d-mcp 0.3.85.dev0 with GPT-6 Astra (High)"
+        self.assertEqual(resolve_display_name(manifest, requested), requested)
+
+    def test_display_name_cannot_hide_stack(self):
+        manifest = self.manifest("gpt-6-astra", "high", "0.3.85.dev0")
+        with self.assertRaisesRegex(ValueError, "missing identity token"):
+            resolve_display_name(manifest, "GPT-6 Astra High")
 
     def test_missing_provenance_cannot_be_packaged(self):
         with self.assertRaisesRegex(ValueError, "run_meta.json"):

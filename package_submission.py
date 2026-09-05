@@ -102,6 +102,27 @@ def resolve_submission_name(manifest, requested_name=None):
     return requested_name
 
 
+def resolve_display_name(manifest, requested_name=None):
+    """Return a free-text leaderboard label while preserving system identity."""
+    if requested_name is None:
+        return derive_submission_name(manifest)
+    name = requested_name.strip()
+    if not name or len(name) > 160 or any(ord(char) < 32 for char in name):
+        raise ValueError("invalid --display-name: use 1-160 printable characters")
+
+    # The display label may use spaces and punctuation, but it must retain every
+    # identifying token from the canonical name so the stack cannot be obscured.
+    canonical_tokens = set(re.findall(r"[a-z0-9]+", derive_submission_name(manifest)))
+    display_tokens = set(re.findall(r"[a-z0-9]+", name.lower()))
+    missing = canonical_tokens - display_tokens
+    if missing:
+        raise ValueError(
+            "invalid --display-name: missing identity token(s): "
+            + ", ".join(sorted(missing))
+        )
+    return name
+
+
 def proxy_gate(step_path):
     """Run the build123d-mcp validity gate on a STEP/STL and return its report."""
     from build123d import import_step
@@ -181,7 +202,9 @@ def describe_task_sources(task_sources):
     return source_notes
 
 
-def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
+def build_submission_zip(
+    root, manifest, full_set_path, submitter, name=None, display_name=None
+):
     """Build the upload-ready zip: meta.json + every fixture dir at the root.
 
     Pads to the canonical full fixture set (CADGenBench requires every sample dir
@@ -193,6 +216,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
     permalink.
     """
     name = resolve_submission_name(manifest, name)
+    display_name = resolve_display_name(manifest, display_name)
     rm = manifest.get("run_meta", {})
     model = rm.get("model", "unknown")
     effort = rm.get("reasoning_effort")
@@ -261,7 +285,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
         )[:500]
     meta = {
         "submitter_name": submitter,
-        "submission_name": name,
+        "submission_name": display_name,
         "agent_url": agent_url,
         "notes": notes,
         "agree_to_publish": True,
@@ -295,7 +319,7 @@ def build_submission_zip(root, manifest, full_set_path, submitter, name=None):
     print(f"\n=== submission zip: {zip_path} ===")
     print(f"  fixtures        : {len(ids)} dirs, {n_out} with output.step")
     print(f"  submitter_name  : {submitter}")
-    print(f"  submission_name : {name}")
+    print(f"  submission_name : {display_name}")
     print(f"  agent_url       : {agent_url}")
     print(f"  notes           : {notes}")
     return zip_path
@@ -323,6 +347,14 @@ def main():
         help=(
             "optional suffix-bearing submission_name; by default it is derived from "
             "run_meta.json, and any override must retain the complete derived prefix"
+        ),
+    )
+    ap.add_argument(
+        "--display-name",
+        default=None,
+        help=(
+            "optional free-text submission_name stored in meta.json; it must retain "
+            "the canonical stack, version, model, and effort identity"
         ),
     )
     args = ap.parse_args()
@@ -412,7 +444,14 @@ def main():
     print(f"manifest          : {root / 'manifest.json'}")
     if args.zip:
         try:
-            build_submission_zip(root, manifest, args.full_set, args.submitter, args.name)
+            build_submission_zip(
+                root,
+                manifest,
+                args.full_set,
+                args.submitter,
+                args.name,
+                args.display_name,
+            )
         except ValueError as exc:
             sys.exit(f"cannot build submission ZIP: {exc}")
 

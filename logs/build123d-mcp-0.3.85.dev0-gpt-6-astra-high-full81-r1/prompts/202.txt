@@ -1,0 +1,66 @@
+You are an expert CAD engineer. Use the build123d MCP to edit the imported solid in
+`input.step` and write the result to exactly `/var/folders/nc/sgtnd9hs0yjfrp26bcq3rwnr0000gn/T//cgb_fixture.0Hk0Lh/output.step`.
+
+Requested change:
+
+The part has two principal bores along the Z axis. For the smaller of the two bores, there is an upper opening that is circular and lies on the XY plane, roughly halfway along the part in the Z direction. This surface is described by two concentric circles. Raise this surface by 10mm in the +Z direction.
+
+Reference renders of the starting solid are in `renders/`. Dimensions are in mm.
+Change only the requested feature; preserve every unrelated face, hole, interface,
+body, and dimension.
+
+Use this sequential workflow. Do not batch a gate call with a later-phase call,
+because you must read the gate result before proceeding.
+
+1. Import `input.step` as object `part`, measure it, and validate it. Call
+   `bank_candidate(filename="/var/folders/nc/sgtnd9hs0yjfrp26bcq3rwnr0000gn/T//cgb_fixture.0Hk0Lh/output.step", object_name="part",
+   snapshot_name="valid_baseline")` to establish the scored floor. This checks the
+   written/reimported STEP privately and promotes it only on PASS. If `banked` is
+   false, do not perform the requested edit: call `locate_gate_defects("part")`, then
+   `repair_advice(error_text=<actual gate failure>, goal=<requested edit>,
+   context=<locator diagnosis>)`. Implement the smallest explicit, generic repair
+   justified by its face/edge/UV evidence, validate it, and retry `bank_candidate`.
+   Restore or discard failed candidates; never overwrite the safe floor with one.
+
+2. Only after a baseline is banked, follow the bank result's recognition advice.
+   Call `recognise_features(object_name=<clean object>)` once without `families`,
+   then call only the relevant supported family. Resolve returned `@feature[...]`
+   handles inside `execute()` with `recognition_faces(handle)` and inspect those
+   exact faces. If a family explicitly returns no candidates, use a bounded
+   conventional face/feature search. Re-run recognition after replacing its source
+   object. Confirm all spatial qualifiers and the stated current dimension before
+   editing; use the renders once if coordinates alone leave the target ambiguous.
+   When more than one geometric candidate remains, enumerate the bounded candidate
+   set in a compact evidence table (position, signed normal/axis, dimensions,
+   boundary loops, and adjacent faces) and rank every candidate against every noun
+   and spatial qualifier in the request. A family match alone is not confirmation.
+   For an annular opening, inspect every planar two-concentric-circle face and its
+   adjoining cylinders; radial thickness and axial position often distinguish two
+   otherwise plausible ends of the same bore.
+
+   Do not silently relabel a requested axis because recognised geometry uses a
+   different CAD axis. Establish the complete signed mapping between the request's
+   named axes/planes and the imported STEP using the axis-labelled reference renders
+   plus the feature geometry. In particular, distinguish `+axis` from `-axis` and
+   the near opening from the far opening. If the mapping remains inconsistent,
+   compare both bounded hypotheses with a render or section before editing; never
+   default to the selected face normal.
+
+3. Modify the existing B-rep rather than rebuilding the part. Bind the current
+   value, target value, and delta to named variables and apply only the requested
+   change. After each geometry change, validate before further work. Compare the
+   clean baseline/original against the candidate with `compare(kind="shape")` and
+   prove the target, direction, magnitude, added/removed material, and preservation
+   of unrelated geometry.
+
+4. Promote a final candidate only with
+   `bank_candidate(filename="/var/folders/nc/sgtnd9hs0yjfrp26bcq3rwnr0000gn/T//cgb_fixture.0Hk0Lh/output.step", object_name=<candidate>,
+   snapshot_name="final")`. If it is not banked, keep the existing valid floor and
+   use its reported failure with the locator and repair advice. A live validate PASS
+   or an ordinary export is not final proof. If no edited candidate clears the
+   written STEP gate, leave the banked baseline at `/var/folders/nc/sgtnd9hs0yjfrp26bcq3rwnr0000gn/T//cgb_fixture.0Hk0Lh/output.step` and report why.
+
+Work autonomously and persist while calls make measurable progress. Prefer the MCP's
+diagnostic and recognition evidence over long exploratory topology walks. Raw OCP is
+appropriate only for a small explicit repair or edit that build123d cannot express.
+Do not delegate or use the web.

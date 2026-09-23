@@ -11,6 +11,14 @@ For each ``selfbench/fixtures/<id>/part.py`` this:
 4. rasterises page 1 to ``input.png`` (the agent's only visual input),
 5. writes ``description.yaml`` in the canonical generation-fixture format.
 
+**Editing fixtures.** If ``part.py`` also defines ``input_part`` (the starting
+solid) and ``edit`` (the change request), the fixture is an editing task:
+``part`` is the edited ground truth, and instead of a drawing we write
+``input.step``, ``edit_description.txt`` and ``renders/{iso,front,top,right}.png``
+of the starting solid — the same inputs a real CADGenBench editing fixture
+ships. Renders need a display; on a headless Linux box without one we start
+``Xvfb`` ourselves.
+
 Run it with the authoring deps on the path:
 
     uv run --with build123d --with draftwright --with pymupdf \
@@ -45,6 +53,26 @@ input_files:
 input_type: text+image
 """
 
+EDIT_DESCRIPTION_YAML = """description: >
+  {edit}
+
+task_type: editing
+input_files:
+  - input.step
+
+input_type: text+step
+"""
+
+# Camera presets mirrored from cadgenbench.common.camera_presets (Z-up;
+# direction points from the target toward the camera).
+_S3 = 3 ** -0.5
+RENDER_VIEWS = {
+    "iso": ((_S3, -_S3, _S3), (0, 0, 1)),
+    "front": ((0, -1, 0), (0, 0, 1)),
+    "top": ((0, 0, 1), (0, 1, 0)),
+    "right": ((1, 0, 0), (0, 0, 1)),
+}
+
 RASTER_DPI = 260  # ~3040x2150 for an A4 page — matches real fixture input.png
 
 
@@ -78,6 +106,54 @@ def _drawing_pdf(ns: dict, gt_step: Path, title: str, tmp: Path) -> Path:
     return prefix.with_suffix(".pdf")
 
 
+def _ensure_display() -> None:
+    """Start a private Xvfb for VTK when running headless (no DISPLAY)."""
+    import os
+    import time
+
+    if os.environ.get("DISPLAY") or sys.platform != "linux":
+        return
+    subprocess.Popen(["Xvfb", ":379", "-screen", "0", "1024x768x24"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1)
+    os.environ["DISPLAY"] = ":379"
+
+
+def _render_views(shape, renders_dir: Path) -> None:
+    """Shaded PNG renders of *shape* at the CADGenBench default views."""
+    _ensure_display()
+    import pyvista as pv
+    from build123d import export_stl
+
+    renders_dir.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        stl = Path(tmp) / "shape.stl"
+        export_stl(shape, str(stl), tolerance=0.01, angular_tolerance=0.1)
+        mesh = pv.read(str(stl))
+    for name, (direction, up) in RENDER_VIEWS.items():
+        pl = pv.Plotter(off_screen=True, window_size=(1024, 768))
+        pl.set_background("white")
+        pl.add_mesh(mesh, color="#dfe2e6", specular=0.2)
+        pl.camera_position = [direction, (0, 0, 0), up]
+        pl.reset_camera()
+        pl.camera.focal_point = mesh.center
+        pl.screenshot(str(renders_dir / f"{name}.png"))
+        pl.close()
+
+
+def _author_edit(fixture_dir: Path, ns: dict) -> None:
+    from build123d import export_step
+
+    export_step(ns["input_part"], str(fixture_dir / "input.step"))
+    export_step(ns["part"], str(fixture_dir / "ground_truth.step"))
+    edit = " ".join(ns["edit"].split())
+    (fixture_dir / "edit_description.txt").write_text(edit + "\n")
+    (fixture_dir / "description.yaml").write_text(EDIT_DESCRIPTION_YAML.format(edit=edit))
+    _render_views(ns["input_part"], fixture_dir / "renders")
+    print(f"authored {fixture_dir.name} (editing): input.step, ground_truth.step, "
+          "edit_description.txt, renders/, description.yaml")
+
+
 def author_one(fixture_dir: Path) -> None:
     part_py = fixture_dir / "part.py"
     if not part_py.is_file():
@@ -86,6 +162,9 @@ def author_one(fixture_dir: Path) -> None:
     from build123d import export_step  # local import: needs the authoring env
 
     ns = _load_part(part_py)
+    if "input_part" in ns:
+        _author_edit(fixture_dir, ns)
+        return
     part = ns["part"]
     title = ns.get("title") or fixture_dir.name
 

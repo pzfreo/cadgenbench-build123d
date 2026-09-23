@@ -13,6 +13,13 @@ For each ``results/<run>/<id>/output.step`` with a matching
 ``selfbench/fixtures/<id>/ground_truth.step`` it prints one row and writes a
 JSON summary to ``selfbench/scores/<run>.json``.
 
+Editing fixtures (those with an ``input.step``) are scored the way the Space
+scores edits: the shape axis is renormalised against the no-op baseline
+``b = shape_similarity(input.step, GT)`` as ``max(0, (s - b) / (1 - b))``, and
+``edit_score = (0.6 * s_renorm + 0.1 * topo_match) / 0.7`` — the Space's
+``0.6/0.3/0.1`` weights renormalised over the axes we have (self-bench
+fixtures carry no interface regions). A no-op scores ~0.14 on this scale.
+
 NOTE: renders are intentionally skipped (no ``*_renders_dir``) — the headless
 VTK/OSMesa stack the Space uses for preview PNGs isn't needed to compute the
 score, and omitting it avoids a segfault on plain installs.
@@ -29,6 +36,18 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO / "selfbench" / "fixtures"
+
+
+def _edit_scores(out_step: Path, gt: Path, input_step: Path, sim: float) -> dict:
+    from cadgenbench.eval.shape_similarity import compare_step_files
+    from cadgenbench.eval.topo_match import topo_match
+
+    base = compare_step_files(str(input_step), str(gt), align=True)
+    b = base.scores["shape_similarity_score"]
+    renorm = max(0.0, (sim - b) / (1 - b)) if b < 1 else 0.0
+    topo = topo_match(out_step, gt).score
+    return {"baseline_shape_similarity": b, "shape_similarity_renormalized": renorm,
+            "topo_match": topo, "edit_score": (0.6 * renorm + 0.1 * topo) / 0.7}
 
 
 def score_run(run_dir: Path) -> dict:
@@ -48,13 +67,26 @@ def score_run(run_dir: Path) -> dict:
         sim = scores.get("shape_similarity_score")
         f1 = scores.get("shape_surface_distance_f1")
         iou = scores.get("shape_volume_iou")
-        print(f"{fid:>6}  score={sim:.4f}  surfF1={f1:.4f}  volIoU={iou:.4f}"
+        edit = ""
+        input_step = FIXTURES_DIR / fid / "input.step"
+        if input_step.is_file():
+            e = _edit_scores(out_step, gt, input_step, sim)
+            rows[-1]["edit"] = e
+            edit = (f"  EDIT={e['edit_score']:.4f}  renorm={e['shape_similarity_renormalized']:.4f}"
+                    f"  noop_sim={e['baseline_shape_similarity']:.4f}  topo={e['topo_match']:.4f}")
+        print(f"{fid:>6}  score={sim:.4f}  surfF1={f1:.4f}  volIoU={iou:.4f}" + edit
               + (f"  errors={r.metric_errors}" if r.metric_errors else ""))
 
-    sims = [r["scores"].get("shape_similarity_score", 0.0) for r in rows]
-    mean = sum(sims) / len(sims) if sims else 0.0
-    print(f"\nmean shape_similarity_score over {len(rows)} fixture(s): {mean:.4f}")
-    return {"run": run_dir.name, "mean_shape_similarity_score": mean, "fixtures": rows}
+    gen = [r["scores"].get("shape_similarity_score", 0.0) for r in rows if "edit" not in r]
+    edits = [r["edit"]["edit_score"] for r in rows if "edit" in r]
+    mean = sum(gen) / len(gen) if gen else 0.0
+    edit_mean = sum(edits) / len(edits) if edits else None
+    if gen:
+        print(f"\nmean shape_similarity_score over {len(gen)} generation fixture(s): {mean:.4f}")
+    if edits:
+        print(f"mean edit_score over {len(edits)} editing fixture(s): {edit_mean:.4f}")
+    return {"run": run_dir.name, "mean_shape_similarity_score": mean,
+            "mean_edit_score": edit_mean, "fixtures": rows}
 
 
 def main(argv: list[str]) -> int:

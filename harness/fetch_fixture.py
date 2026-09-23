@@ -19,7 +19,7 @@ REPO = "HuggingAI4Engineering/cadgenbench-data"
 # Agent-facing inputs only. A self-bench fixture dir also holds part.py and
 # ground_truth.step; those must NEVER be copied into the run input dir (that
 # would hand the agent the answer). Mirrors what the HF dataset exposes.
-SELFBENCH_INPUTS = ("description.yaml", "input.png", "input.step")
+SELFBENCH_INPUTS = ("description.yaml", "input.png", "input.step", "edit_description.txt")
 
 
 def _try_local(fid: str, dest: Path) -> bool:
@@ -33,6 +33,9 @@ def _try_local(fid: str, dest: Path) -> bool:
         if src.is_file():
             shutil.copyfile(src, dest / name)
             print("fetched (self-bench)", dest / name)
+    if (local / "renders").is_dir():  # editing fixtures: reference renders
+        shutil.copytree(local / "renders", dest / "renders", dirs_exist_ok=True)
+        print("fetched (self-bench)", dest / "renders")
     return True
 
 

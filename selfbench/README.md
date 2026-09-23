@@ -53,9 +53,13 @@ uv run --with build123d --with draftwright --with pymupdf \
 ./run_sweep.sh selfbench/selfbench.txt selfbench-v1 claude-opus-4-8 build123d-mcp==0.3.72 1
 
 # 3. Score outputs against your ground truth with the real CADGenBench metric
-uv run --with 'cadgenbench @ git+https://github.com/huggingface/cadgenbench.git@8ae1432' \
+uv run --no-project --python 3.12 --exclude-newer 2026-07-15 \
+    --with 'cadgenbench @ git+https://github.com/huggingface/cadgenbench.git@8ae1432' \
     python selfbench/local_score.py results/selfbench-v1
 ```
+
+(`--exclude-newer` is needed: newer build123d pulls OCP 8, which drops an API the
+pinned scorer uses. `--no-project` keeps uv from resolving a parent project.)
 
 `local_score.py` reports `shape_surface_distance_f1`, `shape_volume_iou`, and
 their mean `shape_similarity_score` in `[0, 1]` per fixture (candidate is
@@ -105,6 +109,24 @@ specific values and geometry of 9011/9013.
 base flange and top boss. It adds a deep cored body, counterbored central bore,
 and four-hole rectangular mounting pattern so success requires both correct
 dimension inference and a substantially richer feature inventory.
+
+## Editing fixtures (91xx)
+
+A `part.py` that also defines `input_part` (the starting solid) and `edit` (the
+request) is an **editing** fixture: `part` is the edited ground truth, and
+`author_fixtures.py` writes `input.step`, `edit_description.txt` and
+`renders/{iso,front,top,right}.png` (cadgenbench camera presets) instead of a
+drawing. `local_score.py` adds an `EDIT` column scored like the Space: shape
+renormalised against the no-op, `(0.6·renorm + 0.1·topo) / 0.7` (no interface
+regions locally), so an unchanged input scores ~0.14. List: `editing.txt`.
+
+9101–9105 each target one request-reading failure class (axis qualifier among
+same-size decoys, "each of the four" completeness, extreme-face selection,
+which-ribs, keeping a rounded top through a resize). **They are too easy:**
+Opus 5.5 + MCP 0.3.84 scored 0.98 with the current prompt (n=1). Clean
+synthetic parts don't reproduce the real misses, which happen on messy
+imported B-reps. Treat them as regression checks; a discriminating edit set
+needs messier geometry.
 
 ## Notes
 

@@ -152,7 +152,7 @@ cd "$WORK"
 # "conforms: true" result reliably reads to the model as a stop signal regardless
 # of prompt caveats saying otherwise (build123d-mcp#362). The Codex driver has no
 # equivalent allowlist, so this can only be hard-blocked here.
-ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects"
+ALLOWED="mcp__build123d__execute,mcp__build123d__render_view,mcp__build123d__measure,mcp__build123d__compare,mcp__build123d__validate,mcp__build123d__export,mcp__build123d__import_cad_file,mcp__build123d__save_snapshot,mcp__build123d__restore_snapshot,mcp__build123d__find_holes,mcp__build123d__find_hole_patterns,mcp__build123d__find_bosses,mcp__build123d__find_bored_bosses,mcp__build123d__cross_sections,mcp__build123d__session_state,mcp__build123d__last_error,mcp__build123d__resolve,mcp__build123d__locate_gate_defects,mcp__build123d__repair_advice,mcp__build123d__recognise_features"
 
 # Eagerly load the build123d MCP tool schemas instead of deferring them behind
 # the ToolSearch tool (Claude Code's default). Deferral cost ~3 ToolSearch calls
@@ -280,6 +280,15 @@ while true; do
   (( CLAUDE_RC == 0 )) || exit "$CLAUDE_RC"
   break
 done
+
+# Report-only recognition audit for editing runs: did the agent use
+# recognise_features() and resolve a handle via recognition_faces()?
+if [[ "$TASK" == "editing" ]]; then
+  python3 "$HERE/audit_claude_recognition.py" stream.jsonl > recognition_audit.json 2>/dev/null || true
+  if ! jq -e '.recognition_completed and .resolution_requirement_satisfied' recognition_audit.json >/dev/null 2>&1; then
+    echo "NOTE: prompt-guided recognition workflow was not fully used; see recognition_audit.json"
+  fi
+fi
 
 echo
 if [[ -f output.step ]]; then

@@ -1,8 +1,12 @@
+import os
+import tempfile
 import unittest
 
 from package_submission import (
+    MAX_STEP_FILE_BYTES,
     derive_submission_name,
     describe_task_sources,
+    proxy_gate,
     resolve_submission_name,
 )
 
@@ -86,3 +90,15 @@ class SubmissionNameTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProxyGateSizeTests(unittest.TestCase):
+    def test_oversize_step_fails_before_geometry_is_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            step = os.path.join(tmp, "output.step")
+            with open(step, "wb") as fh:
+                fh.truncate(MAX_STEP_FILE_BYTES + 1)  # sparse; not valid STEP
+            report = proxy_gate(step)
+        self.assertFalse(report["passes_gate"])
+        self.assertIn("ceiling", report["reasons"][0])
+

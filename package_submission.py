@@ -102,8 +102,25 @@ def resolve_submission_name(manifest, requested_name=None):
     return requested_name
 
 
+# CADGenBench's validity gate rejects STEP files above this size outright
+# (cadgenbench.common.validity.MAX_STEP_FILE_BYTES), before any geometry check.
+# The build123d-mcp gate does not check file size, so mirror it here.
+MAX_STEP_FILE_BYTES = 50_000_000
+
+
 def proxy_gate(step_path):
     """Run the build123d-mcp validity gate on a STEP/STL and return its report."""
+    size = Path(step_path).stat().st_size
+    if str(step_path).lower().endswith((".step", ".stp")) and size > MAX_STEP_FILE_BYTES:
+        return {
+            "passes_gate": False,
+            "reasons": [
+                f"STEP file is {size} bytes, over CADGenBench's "
+                f"{MAX_STEP_FILE_BYTES}-byte ceiling; the grader rejects it unread"
+            ],
+            "mesh_check": "skipped",
+            "warnings": [],
+        }
     from build123d import import_step
     from build123d_mcp.tools.validate import _gate_report, _run_mesh_gate_subprocess
 

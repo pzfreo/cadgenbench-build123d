@@ -88,10 +88,6 @@ class SubmissionNameTests(unittest.TestCase):
         self.assertIn("repair-first-then-strict-recognition", notes[1])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ProxyGateSizeTests(unittest.TestCase):
     def test_oversize_step_fails_before_geometry_is_read(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -102,3 +98,6 @@ class ProxyGateSizeTests(unittest.TestCase):
         self.assertFalse(report["passes_gate"])
         self.assertIn("ceiling", report["reasons"][0])
 
+
+if __name__ == "__main__":
+    unittest.main()

@@ -8,7 +8,7 @@
 #   fixture_input_dir : holds input.png (generation) and optionally input.step (editing)
 #   work_dir          : output.step + stream.jsonl + filtered.log land here
 #   model             : claude model id (default: claude-opus-4-8)
-#   mcp_spec          : build123d-mcp version spec for uv tool run (default: build123d-mcp==0.3.81)
+#   mcp_spec          : build123d-mcp version spec for uv tool run (default: build123d-mcp==0.3.89)
 #   exec_timeout      : seconds, passed as --exec-timeout (default: server's own, 120s)
 #
 # Live log (in another terminal):
@@ -19,7 +19,7 @@ set -euo pipefail
 FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
 MODEL="${3:-claude-opus-4-8}"
-MCP_SPEC="${4:-build123d-mcp==0.3.81}"
+MCP_SPEC="${4:-build123d-mcp==0.3.89}"
 EXEC_TIMEOUT="${5:-}"
 
 # Optional reasoning-effort suffix on the model id: "claude-fable-5:xhigh" ->

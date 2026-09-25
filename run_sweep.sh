@@ -12,7 +12,7 @@
 #                   claude-* routes to Claude Code; agy/* routes to Google
 #                   Antigravity CLI; google/* routes through Codex + Vercel;
 #                   any other id routes to the Codex CLI. All produce one STEP.
-#   mcp_spec      : build123d-mcp spec for uv tool run (default: build123d-mcp==0.3.81;
+#   mcp_spec      : build123d-mcp spec for uv tool run (default: build123d-mcp==0.3.89;
 #                   pass "build123d-mcp @ file:///path" to test a local build)
 #   jobs          : fixtures to run concurrently (default 4). Each fixture has
 #                   its own work dir, so parallel runs never collide. If you hit
@@ -72,7 +72,7 @@ fi
 LIST="${1:?fixtures list file (one id per line)}"
 RUN="${2:?run name}"
 MODEL="${3:-claude-opus-4-8}"
-MCP_SPEC="${4:-build123d-mcp==0.3.81}"
+MCP_SPEC="${4:-build123d-mcp==0.3.89}"
 JOBS="${5:-4}"
 EXEC_TIMEOUT="${6:-}"
 

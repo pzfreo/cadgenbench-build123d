@@ -12,7 +12,7 @@
 #   fixture_input_dir : holds input.png (generation) and optionally input.step (editing)
 #   work_dir          : output.step + stream.jsonl + filtered.log land here
 #   model             : codex model id (default: gpt-5.5)
-#   mcp_spec          : build123d-mcp version spec for uv tool run (default: build123d-mcp==0.3.89)
+#   mcp_spec          : build123d-mcp version spec for uv tool run (default: build123d-mcp==0.3.90)
 #   exec_timeout      : seconds, passed as --exec-timeout (default: server's own, 120s)
 #
 # Live log (in another terminal):
@@ -23,7 +23,7 @@ set -euo pipefail
 FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
 MODEL="${3:-gpt-5.5}"
-MCP_SPEC="${4:-build123d-mcp==0.3.89}"
+MCP_SPEC="${4:-build123d-mcp==0.3.90}"
 EXEC_TIMEOUT="${5:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 

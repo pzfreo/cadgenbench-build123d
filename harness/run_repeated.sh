@@ -10,7 +10,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 LIST="${1:?fixture list}"; BASE="${2:?base run name}"
-MODEL="${3:-claude-opus-4-8}"; MCP="${4:-build123d-mcp==0.3.89}"; JOBS="${5:-5}"; N="${6:-3}"
+MODEL="${3:-claude-opus-4-8}"; MCP="${4:-build123d-mcp==0.3.90}"; JOBS="${5:-5}"; N="${6:-3}"
 echo "repeated run: $N x '$BASE' (model=$MODEL mcp=$MCP jobs=$JOBS) over $LIST"
 echo "WARNING: cost is N x a normal sweep. Use a SUBSET list for cheap A/B measurement."
 for k in $(seq 1 "$N"); do

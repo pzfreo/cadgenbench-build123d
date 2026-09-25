@@ -15,7 +15,7 @@ set -euo pipefail
 FIX="${1:?fixture input dir}"
 WORK="${2:?work dir}"
 MODEL="${3:-agy/gemini-3.7-flash-high}"
-MCP_SPEC="${4:-build123d-mcp==0.3.89}"
+MCP_SPEC="${4:-build123d-mcp==0.3.90}"
 EXEC_TIMEOUT="${5:-}"
 PROMPT_STYLE="${CGB_PROMPT_STYLE:-default}"
 FORCE_RECOGNITION="${CGB_FORCE_RECOGNITION:-0}"

@@ -54,7 +54,7 @@ on the right side of the line:
 
 `model` defaults to `claude-opus-4-8` (`claude-*` routes to Claude Code; any
 other id, e.g. `gpt-5.5`, routes to the Codex CLI driver — see below). `mcp_spec`
-defaults to the reproducible pin `build123d-mcp==0.3.89`. `jobs` (fixtures run concurrently;
+defaults to the reproducible pin `build123d-mcp==0.3.90`. `jobs` (fixtures run concurrently;
 each has its own work dir, so parallel runs never collide) defaults to `4` —
 lower it if you hit API rate limits (429s). `exec_timeout` (seconds, passed to
 both drivers as `--exec-timeout`) defaults to each server's own default

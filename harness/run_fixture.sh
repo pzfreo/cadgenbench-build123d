@@ -263,7 +263,10 @@ while true; do
     # The init event normally arrives first, but rejected rate-limit events also
     # carry the conversation id. Accept either so an unusually early rejection
     # can still be resumed rather than abandoning the fixture.
-    SESSION_ID="$(jq -r 'select(.session_id? | type == "string") | .session_id' "$ATTEMPT_LOG" 2>/dev/null | head -n1)"
+    # first(...) stops jq at the first match with no pipe: `jq | head -n1` made jq
+    # die of SIGPIPE on a large stream, which under pipefail killed the driver
+    # right here (skipping cleanup, the audit and quota resume).
+    SESSION_ID="$(jq -Rrn 'first(inputs | fromjson? | select(.session_id? | type == "string") | .session_id) // empty' "$ATTEMPT_LOG" 2>/dev/null || true)"
     [[ "$SESSION_ID" != "null" ]] || SESSION_ID=""
   fi
 

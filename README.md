@@ -63,6 +63,9 @@ both drivers as `--exec-timeout`) defaults to each server's own default
 fixture is fetched, run through `harness/run_fixture.sh` (generation or editing
 is auto-detected from the fixture's files), and the result copied to
 `results/<run_name>/<id>/output.step`. Per-fixture failures don't abort the sweep.
+Editing-only sweeps (all fixture ids 2xx or self-bench 91xx) are capped at 3
+concurrent fixtures, because edit sessions import large source parts and 4 or
+more exhausted RAM on an 8 GB host; override with `CGB_EDIT_MAX_JOBS`.
 
 Override `mcp_spec` explicitly when testing another release or a local build.
 Reported comparisons should always use an exact version; a moving `@latest`

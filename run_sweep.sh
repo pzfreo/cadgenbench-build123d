@@ -227,6 +227,15 @@ cat > "$HERE/results/$RUN/run_meta.json" <<JSON
 JSON
 [[ "$GIT_DIRTY" == true ]] && echo "WARNING: working tree dirty — run_meta records git_dirty=true (+ uncommitted.patch). Commit for clean provenance."
 
+# Editing fixtures import large source parts; on an 8 GB host four or more
+# concurrent edit sessions exhausted RAM (one MCP worker reached 2 GB). Cap
+# all-editing sweeps (real 2xx ids, self-bench 91xx) unless overridden.
+EDIT_MAX_JOBS="${CGB_EDIT_MAX_JOBS:-3}"
+if [[ -n "$FIXES" ]] && ! grep -qvE '^(2[0-9]{2}|91[0-9]{2})$' <<<"$FIXES" \
+    && (( JOBS > EDIT_MAX_JOBS )); then
+  echo "editing-only sweep: capping parallel jobs $JOBS -> $EDIT_MAX_JOBS (set CGB_EDIT_MAX_JOBS to override)"
+  JOBS="$EDIT_MAX_JOBS"
+fi
 echo "sweep '$RUN': $n fixtures, $JOBS in parallel, model=$MODEL_ID, effort=$REASONING_EFFORT, provider=$MODEL_PROVIDER, mcp=$MCP_SPEC, exec-timeout=${EXEC_TIMEOUT:-default}, recognition=$RECOGNITION_POLICY"
 echo "provenance: $GIT_COMMIT ($GIT_BRANCH, dirty=$GIT_DIRTY) mcp=$MCP_VERSION@$MCP_GIT_COMMIT (dirty=$MCP_GIT_DIRTY) -> results/$RUN/run_meta.json"
 echo

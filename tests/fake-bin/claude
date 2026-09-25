@@ -4,6 +4,19 @@ set -euo pipefail
 # Deterministic Claude CLI double for the quota-resume integration test. The
 # first call opens a resumable session and rejects at quota; the second must
 # resume that exact session and produces the requested artifact.
+# Large-stream mode: a normal successful run whose log is big enough that a
+# `jq ... | head -n1` session-id probe gets SIGPIPE (regression for the driver
+# exiting under pipefail right after Claude returned).
+if [[ "${FAKE_CLAUDE_MODE:-}" == "large-success" ]]; then
+  printf 'ISO-10303-21;\nEND-ISO-10303-21;\n' > output.step
+  printf '%s\n' '{"type":"system","subtype":"init","session_id":"large-session"}'
+  for _ in $(seq 1 20000); do
+    printf '%s\n' '{"type":"assistant","session_id":"large-session","message":{"content":[{"type":"text","text":"working"}]}}'
+  done
+  printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"exported","session_id":"large-session"}'
+  exit 0
+fi
+
 if [[ ! -f .fake_claude_quota_seen ]]; then
   : > .fake_claude_quota_seen
   reset=$(( $(date +%s) + 1 ))

@@ -1,0 +1,83 @@
+[   0s] chat: I'll start by reading the edit skill, then bank the baseline.
+[   0s] . ReadMcpResourceTool
+[   0s] . import_cad_file
+[   0s]   <- {"contents":[{"uri":"build123d://skill/edit","mimeType":"text/plain","text":"# Edit Existing build123d Geometry (b123d-edit)\n\nUse this skill when the task is 
+[   0s]   <- {"result":"{\n  \"volume\": 3467928.3749,\n  \"solids\": 1,\n  \"faces\": 141,\n  \"edges\": 299,\n  \"vertices\": 172,\n  \"bbox\": {\n    \"xsize\": 565.03,\n
+[   0s] >> validate(part)
+[   0s] execute #1: from build123d import import_step part = import_step("/tmp/cgb_fixture.pdEwXe/input.step")
+[   0s]   <- {"result":"Validity gate: PASS (warning: mesh open-edge / non-closure / refined face-tessellation NOT verified — this shape was too large for the exact stitch i
+[   0s]   <- {"result":"Registered 'part': volume=3.468e+06 mm³, faces=141\nmeasure: volume=3467928.3749, area=256562.1324, faces=141\n3467928.3749\n--- current_shape (\"par
+[   0s] chat: Validate passes. Now banking the unchanged baseline via the written-STEP gate.
+[   0s] . bank_candidate
+[   0s]   <- {"result":"{\n  \"banked\": true,\n  \"filename\": \"/tmp/cgb_fixture.pdEwXe/output.step\",\n  \"replaced_existing_output\": false,\n  \"snapshot_saved\": true,
+[   0s] chat: Baseline banked. Now let me look at the reference renders and the feature inventory.
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] . recognise_features
+[   0s]   <- {"result":"{\n  \"object\": \"part\",\n  \"coordinate_frame\": \"caller\",\n  \"run\": 1,\n  \"cached\": false,\n  \"inventory\": {\n    \"cylinders\": 2,\n    
+[   0s] chat: The part is a 3-throw crankshaft; the "three cylindrical segments not on the main centerline" are the crankpins. Let me get the boss records and the cylinder face inventory.
+[   0s] . recognise_features
+[   0s]   <- {"result":"{\n  \"object\": \"part\",\n  \"coordinate_frame\": \"caller\",\n  \"run\": 1,\n  \"cached\": true,\n  \"inventory\": {\n    \"cylinders\": 2,\n    \
+[   0s] execute #2: from collections import defaultdict cyl = [] for i, f in enumerate(part.faces()):     gt =
+[   0s]   <- {"result":"(122, 76.2, (-282.515, 0.0, 10.465), (1.0, 0.0, 0.0), 21391.83, (-282.52, -193.15))\n(78, 6.0, (-189.515, 47.561, -48.322), (0.0, 0.1, -0.995), 296.6
+[   0s] chat: The crankshaft layout is clear. Let me inventory the non-cylindrical faces, focusing on what touches the three off-axis 76.2 mm cylinders (faces 135, 115, 97).
+[   0s] execute #3: from OCP.BRepAdaptor import BRepAdaptor_Surface from OCP.GeomAbs import GeomAbs_Plane, Geo
+[   0s]   <- {"result":"Counter({'GeomAbs_Cylinder': 67, 'GeomAbs_Torus': 36, 'GeomAbs_Plane': 26, 'GeomAbs_BSplineSurface': 12})\nPIN #135 GeomAbs_Cylinder area=12769.03 x[
+[   0s] execute #4: for t in (9,10,5,6,1,2):     print("TORUS", t)     for j in neighbors(t):         print(" 
+[   0s]   <- {"result":"Error: AttributeError: 'NoneType' object has no attribute 'faces'\n\nHint: Shape is None. If you used BuildPart context manager, access the result wi
+[   0s] execute #5: for t in (9,10,5,6,1,2):     print("TORUS", t)     for j in neighbors(t):         print(" 
+[   0s]   <- {"result":"TORUS 9\n    #135 GeomAbs_Cylinder area=12769.03 x[-172.875,-119.535] y[-38.10,38.10] z[-91.00,-14.80] D=76.2000 c=(-118.895,0.000,-52.897) d=(-1.000
+[   0s] execute #6: import math # --- named edit values --- current_pin_d = 76.2   # mm, measured on faces 135
+[   0s]   <- {"result":"135 4.007461029687e-12 -52.89749753956 76.2 -173.515 -118.895 54.61999999999999\n   pin x-extent -172.8750001 -119.5349999\n115 54.873594576254 42.14
+[   0s] chat: Now the cut. I'll first confirm the tube region contains only pin material (the intersection should equal a Ø76.2 cylinder plus two tiny fillet rings), then apply it.
+[   0s] execute #7: def x_plane(x, yc, zc):     return Plane(origin=(x, yc, zc), x_dir=(0, 1, 0), z_dir=(1, 0,
+[   0s]   <- {"result":"Error: NameError: name 'Plane' is not defined\n\nHint: build123d name not in scope. Add `from build123d import *` at the top of the execute() call. I
+[   0s] execute #8: from build123d import * def x_plane(x, yc, zc):     return Plane(origin=(x, yc, zc), x_dir
+[   0s]   <- {"result":"135 tube vol 113294.8 | part∩outer 249129.51 expected pin 249129.51 solids 1\n115 tube vol 113294.8 | part∩outer 249129.51 expected pin 249129.51 sol
+[   0s] chat: The tube region holds exactly the pin material (249,129.51 mm³ measured vs 249,129.51 expected), so nothing else gets touched. Applying the cut:
+[   0s] execute #9: cut1 = part - tool print(type(cut1), "solids", len(cut1.solids()), "faces", len(cut1.faces
+[   0s]   <- {"result":"<class 'build123d.topology.three_d.Solid'> solids 1 faces 135 vol 3183843.263 removed 284085.112\njunction edges found 6\nCounter({'GeomAbs_Cylinder'
+[   0s] execute #10: edited = cut1.fillet(pin_fillet_r, new_edges) print("solids", len(edited.solids()), "faces
+[   0s]   <- {"result":"solids 1 faces 141 vol 3183942.779 net removed 283985.596\nCounter({'GeomAbs_Cylinder': 67, 'GeomAbs_Torus': 36, 'GeomAbs_Plane': 26, 'GeomAbs_BSplin
+[   0s] >> validate(edited)
+[   0s] execute #11: def fsig(f):     a = BRepAdaptor_Surface(f.wrapped); t = str(a.GetType()).split('.')[-1]  
+[   0s]   <- {"result":"Validity gate: PASS (warning: mesh open-edge / non-closure / refined face-tessellation NOT verified — this shape was too large for the exact stitch i
+[   0s]   <- {"result":"Error: TypeError: 'function' object is not iterable\n\n{\"failure_class\": \"unknown\", \"suggested_fix\": \"Review the full error message and traceb
+[   0s] chat: `from build123d import *` shadowed my `faces` list with the builder function. Rebinding and re-running:
+[   0s] execute #12: ofaces = part.faces() orig_sigs = [fsig(f) for f in ofaces] ed_faces = edited.faces() ed_s
+[   0s]   <- {"result":"Error: NameError: name 'pin_faces' is not defined\n\n{\"failure_class\": \"unknown\", \"suggested_fix\": \"Review the full error message and tracebac
+[   0s] execute #13: pin_faces = {135, 115, 97, 9, 10, 5, 6, 1, 2} web_faces = {139, 136, 119, 116, 101, 98} of
+[   0s]   <- {"result":"untouched original faces NOT found identically in edited: []\nleftover edited faces (new/changed):\n   1 ('GeomAbs_Plane', 6708.375, (173.345, -38.56
+[   0s] execute #14: def edge_desc(f):     out = []     for e in f.edges():         gt = str(e.geom_type).split
+[   0s]   <- {"result":"ORIGINAL pin 1 faces:\n   135 GeomAbs_Cylinder ['CIRCLE r=38.100', 'BSPLINE L=53.340', 'CIRCLE r=38.100']\n   9 GeomAbs_Torus ['CIRCLE r=38.100', 'BS
+[   0s] execute #15: for i, f in enumerate(ofaces):     if len(f.edges()) == 2 and abs(abs(f.center().X) - 282.
+[   0s]   <- {"result":"Error: AttributeError: 'OCP.OCP.BRepAlgoAPI.BRepAlgoAPI_Cut' object has no attribute 'HasErrors'\n\n{\"failure_class\": \"unknown\", \"suggested_fix\
+[   0s] execute #16: for i, f in enumerate(ofaces):     if len(f.edges()) == 2 and abs(abs(f.center().X) - 282.
+[   0s]   <- {"result":"orig end cap 84 ('GeomAbs_Plane', 4560.367, (282.515, 0.0, 10.465)) ['CIRCLE r=38.100', 'CIRCLE r=38.100']\norig end cap 121 ('GeomAbs_Plane', 4560.3
+[   0s] execute #17: u2 = ShapeUpgrade_UnifySameDomain(rs.wrapped, False, True, False)  # UnifyEdges=False, Uni
+[   0s]   <- {"result":"merged: faces 135 edges 287 verts 166 vol 3183843.677\nend caps: [((282.515, 0.0, 10.465), 2), ((-282.515, 0.0, 10.465), 2)]\n  web ('GeomAbs_Plane',
+[   0s] >> validate(edited)
+[   0s] execute #18: ed_faces = edited2.faces() ed_sigs = [fsig(f) for f in ed_faces] ed_counter = Counter(ed_s
+[   0s]   <- {"result":"Validity gate: PASS (warning: mesh open-edge / non-closure / refined face-tessellation NOT verified — this shape was too large for the exact stitch i
+[   0s]   <- {"result":"untouched original faces NOT found identically: []\nnew/changed faces: 15\n   1 ('GeomAbs_Plane', 6708.375, (-173.515, 0.0, -34.06))\n   1 ('GeomAbs_
+[   0s] . compare
+[   0s]   <- {"result":"{\n  \"a\": {\n    \"name\": \"original\",\n    \"volume\": 3467928.3749,\n    \"faces\": 141,\n    \"edges\": 299,\n    \"vertices\": 172,\n    \"bb
+[   0s] execute #19: tot_removed = 0.0; tot_added = 0.0 for p in pins:     L = p['xb'] - p['xa']     crop = Sol
+[   0s]   <- {"result":"pin face 135: removed 94661.798 added 0.000000 | removed x[-173.515,-118.895] (webs -173.515,-118.895) r[30.000,38.740] solids 1\npin face 115: remov
+[   0s] . bank_candidate
+[   0s]   <- {"result":"{\n  \"banked\": true,\n  \"filename\": \"/tmp/cgb_fixture.pdEwXe/output.step\",\n  \"replaced_existing_output\": true,\n  \"snapshot_saved\": true,\
+[   0s] execute #20: import os out = import_step("/tmp/cgb_fixture.pdEwXe/output.step") print("file size MB", r
+[   0s] . render_view
+[   0s]   <- {"result":"file size MB 1.363\nreimport: solids 1 faces 141 edges 299 verts 172 vol 3183943.179\n  X-cyl D=60.0000 PIN  axis(y=-54.874,z=42.146) x[119.365,172.7
+[   0s]   <- [SEND: /tmp/cgb_fixture.pdEwXe/edited_front.png] Rendered via 3d pipeline.
+[   0s] chat: The three crankpins are now Ø60 mm (they were Ø76.2), and the result is written to `/tmp/cgb_fixture.pdEwXe/output.step`. It passed validation and the written-STEP export check.
+
+**What changed**
+- **
+[   0s] RESULT (651s): The three crankpins are now Ø60 mm (they were Ø76.2), and the result is written to `/tmp/cgb_fixture.pdEwXe/output.step`. It passed validation and the written-S

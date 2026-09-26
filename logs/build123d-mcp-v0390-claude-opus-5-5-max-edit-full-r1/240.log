@@ -1,0 +1,212 @@
+[   0s] chat: I'll start by reading the edit skill, then bank the baseline.
+[   0s] . ReadMcpResourceTool
+[   0s]   <- {"contents":[{"uri":"build123d://skill/edit","mimeType":"text/plain","text":"# Edit Existing build123d Geometry (b123d-edit)\n\nUse this skill when the task is 
+[   0s] . import_cad_file
+[   0s]   <- <tool_use_error>Error: No such tool available: import_cad_file</tool_use_error>
+[   0s] . import_cad_file
+[   0s] . Bash
+[   0s]   <- {"result":"{\n  \"volume\": 99414.8556,\n  \"solids\": 1,\n  \"faces\": 1004,\n  \"edges\": 2416,\n  \"vertices\": 1425,\n  \"bbox\": {\n    \"xsize\": 113.8174
+[   0s]   <- /tmp/cgb_fixture.FvjCtX: total 6624 drwx------ 3 teleclaude teleclaude    4096 Sep 26 05:38 . drwxrwxrwt 1 root       root         69632 Sep 26 05:38 .. -rw-r--
+[   0s] >> validate(part)
+[   0s] . Bash
+[   0s]   <- Increase the length of the square boss with rounded corners and a central bore by 10mm. {"mcpServers":{"build123d":{"type":"http","url":"http://127.0.0.1:52571/
+[   0s]   <- {"result":"Validity gate: FAIL — B-rep is not well-formed (BRepCheck failed); 1 mesh non-manifold edge(s) — faces meet >2-ways (self-touch / coincident faces); 
+[   0s] chat: The baseline fails the gate. Let me check what a previous attempt found (there's an attempt log) before repairing.
+[   0s] . Bash
+[   0s]   <- TEXT: I'll start by reading the edit skill, then bank the baseline. TOOL: ReadMcpResourceTool {"server": "build123d", "uri": "build123d://skill/edit"} RESULT: {
+[   0s] chat: That log is this session's own stream — no prior info. Proceeding with baseline repair diagnosis.
+[   0s] . locate_gate_defects
+[   0s] . ReadMcpResourceTool
+[   0s]   <- {"contents":[{"uri":"build123d://skill/repair","mimeType":"text/plain","text":"# Repair Invalid Geometry with build123d (b123d-repair)\n\nUse this skill when `v
+[   0s]   <- {"result":"1 defect(s) located (brep_invalid_face):\n{\n  \"count\": 1,\n  \"defects\": [\n    {\n      \"kind\": \"brep_invalid_face\",\n      \"face_index\": 
+[   0s] chat: The defect is one unorientable BSpline face (#689) near (11.7, 48.6, -11.4). Let me look at the reference renders to understand the part.
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] . Read
+[   0s]   <- 
+[   0s] execute #1: from build123d import * from build123d import import_step import time t0=time.time() part 
+[   0s]   <- {"result":"<class 'build123d.topology.three_d.Solid'> 1 1004\nbbox Vector: (X=-52.2884, Y=-42.0138, Z=-25.0265) Vector: (X=61.529, Y=60.5276, Z=15.9735)\nface68
+[   0s] chat: Only face 689 is BRepCheck-invalid. Trying rung 1 (ShapeFix_Shape) as a candidate, checking volume/bbox deltas.
+[   0s] execute #2: from OCP.TopAbs import TopAbs_SOLID, TopAbs_SHELL, TopAbs_COMPOUND from OCP.TopoDS import 
+[   0s]   <- {"result":"healed vol 99414.85597464365 delta 0.0003383243310963735 faces 1004\nbbox delta Vector: (X=0, Y=0, Z=0) Vector: (X=0, Y=0, Z=0)\nvalid False\nt 20.28
+[   0s] chat: Rung 1 doesn't fix it. Let me analyse the bad face's wire to understand why it's unorientable before choosing a targeted fix.
+[   0s] execute #3: from OCP.ShapeAnalysis import ShapeAnalysis_Wire from OCP.BRepCheck import BRepCheck_Face,
+[   0s]   <- {"result":"order ok: True\nconnected issue: False\nsmall: False\nself-intersection: False\ndegenerated: False\nclosed issue: False\ngaps3d: True gaps2d: True\nl
+[   0s] . Bash
+[   0s]   <- WARNING: HTTP transport runs a single shared CAD session. Concurrent clients will share the same build123d namespace — suitable for single-user deployments only
+[   0s] . Bash
+[   0s]   <- PID COMMAND  690652 /home/teleclaude/.cache/uv/archive-v0/QpNrx7Z1xU2pjh9_/bin/python /home/teleclaude/.cache/uv/archive-v0/QpNrx7Z1xU2pjh9_/bin/build123d-mcp -
+[   0s] chat: I'll use that interpreter for heavy out-of-process attempts. First, per protocol, get repair advice for this defect.
+[   0s] . repair_advice
+[   0s]   <- {"result":"{\n  \"kind\": \"repair_advice\",\n  \"note\": \"This is planning guidance only. Implement the chosen recipe as explicit build123d/OCP code in execut
+[   0s] execute #4: from OCP.BRepTools import BRepTools_ReShape from OCP.ShapeFix import ShapeFix_Face t0=time
+[   0s]   <- {"result":"face-fix status done: True\nnew face valid alone: False\ncand vol 99414.85257055768 -0.0030657616443932056 faces 1004\ncand valid False\nt 2.72165346
+[   0s] chat: Local ShapeFix_Face doesn't clear it. Let me get the precise BRepCheck sub-statuses (face vs wire vs edges) so the repair targets the real cause.
+[   0s] execute #5: from OCP.BRepCheck import BRepCheck_Status res = an.Result(bad_face.wrapped) def stats(r):
+[   0s]   <- {"result":"face status (no ctx): ['BRepCheck_Status.BRepCheck_UnorientableShape']\nwire 0 ['BRepCheck_Status.BRepCheck_NoError']\n  wctx TopAbs_ShapeEnum.TopAbs
+[   0s] execute #6: from OCP.ShapeExtend import ShapeExtend_WireData from OCP.IntRes2d import IntRes2d_Sequenc
+[   0s]   <- {"result":"n ordered 10\nnon-adjacent 2D intersections: []\nuv signed area -0.061084800652875165\n# vars: a=19, area2=-0.12216960130575033, b=19, f0=0.684080685
+[   0s] execute #7: from OCP.TopExp import TopExp from OCP.TopTools import TopTools_IndexedMapOfShape vmap = T
+[   0s]   <- {"result":"n vertices 15\nV1 (23.226, 49.293, -11.265) tol 0.0091\nV2 (-0.091, 49.292, -11.264) tol 0.0091\nV3 (-0.597, 49.53, -11.043) tol 0.0239\nV4 (-0.686, 
+[   0s] execute #8: E = edges_in_wire def uv_pts(e, face, n=40):     c2 = BRepAdaptor_Curve2d(e, face)     f0,
+[   0s]   <- {"result":"A_strip uv signed area -6.108e-02\nB_lens_V3V4 uv signed area -7.240e-06\nC_lens_V4V5 uv signed area 6.236e-07\nD_lens_V5V6 uv signed area -1.721e-05
+[   0s] execute #9: from OCP.BRepExtrema import BRepExtrema_DistShapeShape def max_sep(ea, eb, n=30):     A = 
+[   0s]   <- {"result":"pair e10/e2 max sep 0.0199 mm, lens lengths 0.157 0.165\npair e9/e3 max sep 0.0131 mm, lens lengths 0.123 0.129\npair e8/e4 max sep 0.0264 mm, lens l
+[   0s] chat: Lens pairs are only 0.013–0.026 mm apart (vertex tol is 0.024), with face 746 on one side and face 688 on the other. A 0.03 mm sew will merge them. Building the repair:
+[   0s] execute #10: from OCP.BRep import BRep_Builder from OCP.TopoDS import TopoDS_Wire from OCP.BRepBuilderA
+[   0s]   <- {"result":"fA valid True area 11.31331673379935  fE valid True area 0.015229042021366478\nsewing: free edges 0 multiple edges 0 degenerated 69 t 0.1\nhealed vol
+[   0s] execute #11: from OCP.BRep import BRep_Tool def topo(s):     return len(s.faces()), len(s.edges()), len
+[   0s]   <- {"result":"orig topo (1004, 2416, 1425) degenerate edges 0\nhealed topo (1005, 2413, 1425) degenerate edges 0\nmax center shift 0.00e+00, max area change 1.40e-
+[   0s] execute #12: baseline = healed show(baseline, "baseline")
+[   0s] >> validate(baseline)
+[   0s]   <- {"result":"Registered 'baseline': volume=9.941e+04 mm³, faces=1005\n--- current_shape (\"baseline\") ---\nvolume: 9.941e+04 (+9.94e+04) mm³  |  bbox: 113.8×102.
+[   0s]   <- {"result":"Validity gate: FAIL — 1 mesh non-manifold edge(s) — faces meet >2-ways (self-touch / coincident faces); strict CAD/mesh consumers reject this even th
+[   0s] chat: B-rep is now valid; one mesh non-manifold edge remains (it was present in the original too). Let me locate it.
+[   0s] . locate_gate_defects
+[   0s]   <- {"result":"No validity defects located — the part passes the structural checks.\n{\"count\": 0, \"defects\": [], \"diagnosis\": {\"status\": \"no_located_defect
+[   0s] chat: The locator finds nothing, so this may be tessellation-dependent. Let me run the authoritative written-STEP gate via bank_candidate (it won't promote on FAIL).
+[   0s] . bank_candidate
+[   0s]   <- {"result":"{\n  \"banked\": false,\n  \"filename\": \"/tmp/cgb_fixture.FvjCtX/output.step\",\n  \"existing_output_preserved\": false,\n  \"snapshot_saved\": fal
+[   0s] chat: The written-STEP gate still fails on 1 mesh non-manifold edge that the locator can't find. Let me read how the gate computes that metric so I can reproduce and localize it myself.
+[   0s] . Bash
+[   0s]   <- ./lib/python3.12/site-packages/build123d_mcp/session_registry.py ./lib/python3.12/site-packages/build123d_mcp/drafting_cookbook.py ./lib/python3.12/site-package
+[   0s] . Bash
+[   0s]   <- _locate_subprocess.py:257:            kind = "nonmanifold_edge" _locate_subprocess.py:302:def _mesh_nonmanifold_edges(welded, coord) -> list: _locate_subprocess
+[   0s] . Bash
+[   0s]   <- def _edge_incidence_counts(mf, n_nodes: int):     """Per-undirected-edge triangle-incidence counts for a merged triangle array.      ``mf`` is an (M, 3) int arr
+[   0s] . Bash
+[   0s]   <- """Out-of-process mesh-validity check for the export gate.  Run as ``python -m build123d_mcp._gate_subprocess <step_path>``. Loads the STEP, runs the exact mesh
+[   0s] . Bash
+[   0s]   <- import numpy as np         from OCP.BRep import BRep_Tool         from OCP.BRepMesh import BRepMesh_IncrementalMesh         from OCP.BRepTools import BRepTools 
+[   0s] . Bash
+[   0s]   <- 13:            co = _edge_incidence_counts(mfo, nn) 16:        def _open_ladder() -> tuple[int, _VertexDeflectionEvidence]: 20:            # every rung. The bas
+[   0s] chat: Status: the B-rep defect is fixed (face 689 rebuilt from its own surface/edges); I'm now tracking down one remaining mesh non-manifold edge the gate reports so the baseline can be banked.
+[   0s] . Bash
+[   0s]   <- )          # Build the base-deflection mesh for the non-manifold / untriangulated         # pass below FIRST. The open-edge ladder (which refines the cached    
+[   0s] chat: I'll replicate the gate's base-pass mesh stitch in-session to get the exact coordinates of the non-manifold mesh edge.
+[   0s] execute #13: import math, numpy as np from collections import defaultdict from OCP.BRepMesh import BRep
+[   0s]   <- {"result":"defl 0.15858793573696317 open 0 nm edges: [{'mid': (np.float64(-44.9376), np.float64(25.6859), np.float64(2.1005)), 'p': ((np.float64(-45.2709), np.f
+[   0s] execute #14: defl0, nopen0, nm0, fm_p = mesh_nm_edges(part) print("ORIGINAL part: open", nopen0, "nm:",
+[   0s]   <- {"result":"ORIGINAL part: open 0 nm: [((np.float64(-44.9376), np.float64(25.6859), np.float64(2.1005)), [234], 4), ((np.float64(4.2648), np.float64(-26.482), np
+[   0s] execute #15: from OCP.BRepTools import BRepTools from OCP.BRepAdaptor import BRepAdaptor_Surface emap_b
+[   0s]   <- {"result":"face 234 ori TopAbs_Orientation.TopAbs_FORWARD surf U[-0.000,1.571] V[-0.000,1.486] Uper True Vper False Uclosed False Vclosed False\n    {'ori': 'RE
+[   0s] chat: Index mismatch — my mesh routine used the 1-based OCC face map, not `baseline.faces()` order. Re-inspecting using the same map:
+[   0s] execute #16: for fi in (234, 326):     ff = Face(fm_b.FindKey(fi))     li = bface_index(ff.wrapped)    
+[   0s]   <- {"result":"occ face 234 = list idx 233 area 1.7919 ori TopAbs_Orientation.TopAbs_FORWARD U[0.000,1.000] V[0.000,1.000] Uper False Vper False\n    {'ori': 'REVER
+[   0s] execute #17: from OCP.BRepFill import BRepFill_Filling from OCP.GeomAbs import GeomAbs_C0 t0=time.time(
+[   0s]   <- {"result":"occ face 234 old area 1.79186 new area 1.78783 new edges 3 shares original edges: False valid True\n   max deviation old->new (mm): 0.01043 over 125 
+[   0s] execute #18: t0=time.time() sew2 = BRepBuilderAPI_Sewing(1e-3) for ff in cand2.faces(): sew2.Add(ff.wra
+[   0s]   <- {"result":"free 0 multiple 0 t 0.1\ncand3 vol 99414.5546 delta vs baseline -0.06504, vs orig -0.30102\ntopo (1005, 2413, 1425) baseline topo (1005, 2413, 1425) 
+[   0s] chat: Clean: BRepCheck valid, 0 open / 0 non-manifold mesh edges in my replication, bbox unchanged, total volume change vs input −0.30 mm³ (0.0003%). Registering and running the official gates:
+[   0s] execute #19: baseline = cand3 show(baseline, "baseline")
+[   0s] >> validate(baseline)
+[   0s]   <- {"result":"Registered 'baseline': volume=9.941e+04 mm³, faces=1005\n\nSession objects: part (Solid, 1004 faces), baseline (Solid, 1005 faces)"}
+[   0s]   <- {"result":"Validity gate: FAIL — 1 mesh non-manifold edge(s) — faces meet >2-ways (self-touch / coincident faces); strict CAD/mesh consumers reject this even th
+[   0s] >> export(baseline)
+[   0s] . Bash
+[   0s]   <- {"result":"Exported to /tmp/cgb_fixture.FvjCtX/diag_baseline.step\nvolume 9.941e+04 mm³, bbox 113.8×102.5×41 mm, 1005 faces\n⚠ VALIDITY GATE FAIL — strict CAD/m
+[   0s]   <- defl 0.15858793573696317 triangles 42561 open 0 nm 1 NM edge [-40.1661, 13.9208, -16.0673] [-39.9974, 13.917, -16.1178] count 4 faces [550, 551, 552]    face 55
+[   0s] execute #20: target_c = Vector(-40.086, 13.919, -16.094) cands = sorted([(abs(ff.area-0.00552)+ (ff.cen
+[   0s]   <- {"result":"550 0.002042 (-40.086, 13.919, -16.094) 2 GeomType.BSPLINE\n542 0.171053 (-39.625, 13.906, -16.156) 3 GeomType.BSPLINE\n541 0.004841 (-39.246, 13.894
+[   0s] execute #21: t0=time.time() sew3 = BRepBuilderAPI_Sewing(0.06)   # > lens separation 0.0497 mm for i,ff
+[   0s]   <- {"result":"free 2 multiple 0 t 0.1\ncand4 vol 99414.5406 delta vs baseline -0.01397, vs orig -0.31499\ntopo (1004, 2413, 1425)\nbbox delta Vector: (X=0, Y=0, Z=
+[   0s] chat: Sewing at 0.06 didn't pair them (2 free edges left) — the lens's end vertices are up to 0.065 mm apart. Sweeping the tolerance upward (only these two free edges are candidates):
+[   0s] execute #22: t0=time.time() cand4 = None for tol in (0.08, 0.1, 0.15):     s_ = BRepBuilderAPI_Sewing(t
+[   0s]   <- {"result":"tol 0.08 free 0 multiple 0\nused tol 0.08 vol delta vs baseline -0.01397 vs orig -0.31499 topo (1004, 2412, 1425)\nbbox delta Vector: (X=0, Y=0, Z=0)
+[   0s] chat: Exactly the expected topology (1004/2412/1425), valid, every other face unchanged. Now the authoritative written-STEP gate via bank_candidate:
+[   0s] execute #23: baseline = cand4 show(baseline, "baseline")
+[   0s] . bank_candidate
+[   0s]   <- {"result":"Registered 'baseline': volume=9.941e+04 mm³, faces=1004\n--- current_shape (\"baseline\") ---\nvolume: 9.941e+04 mm³  |  bbox: 113.8×102.5×41 mm  |  
+[   0s]   <- {"result":"{\n  \"banked\": true,\n  \"filename\": \"/tmp/cgb_fixture.FvjCtX/output.step\",\n  \"replaced_existing_output\": false,\n  \"snapshot_saved\": true,
+[   0s] . recognise_features
+[   0s]   <- MCP server "build123d" tool "recognise_features" sent no response or progress for 311s; aborting. If this server is configured in your MCP settings, set a per-s
+[   0s] chat: Recognition on this 1004-face casting timed out. The worker may still be busy or reset; let me probe with a trivial call rather than re-running anything heavy.
+[   0s] execute #24: print("alive", 'baseline' in dir(), len(baseline.faces()) if 'baseline' in dir() else None
+[   0s]   <- {"result":"alive True 1005\n\nSession objects: part (Solid, 1004 faces), baseline (Solid, 1005 faces)"}
+[   0s] chat: The session is alive but `baseline` reverted to the 1005-face intermediate — the worker appears to have been reset/replayed. Let me check which variables survived before continuing.
+[   0s] execute #25: for nm_ in ['part','healed','cand2','cand3','cand4','baseline','lens_i','used_tol','as_sol
+[   0s]   <- {"result":"part 1004 99414.8526\nhealed 1005 99414.6197\ncand2 1005 99414.5277\ncand3 1005 99414.5546\ncand4 1004 99414.5406\nbaseline 1005 99414.5546\nlens_i i
+[   0s] chat: `cand4` (the banked 1004-face baseline) survived but the `baseline` name and registry reverted. Restoring the banked snapshot and re-binding:
+[   0s] . restore_snapshot
+[   0s]   <- {"result":"Error: \"No snapshot named 'valid_baseline'. Available: []\""}
+[   0s] execute #26: baseline = cand4 print(len(baseline.faces()), round(baseline.volume,4)) show(baseline, "ba
+[   0s]   <- {"result":"1004 99414.5406\nRegistered 'baseline': volume=9.941e+04 mm³, faces=1004\n7090326\n--- current_shape (\"baseline\") ---\nvolume: 9.941e+04 mm³  |  bb
+[   0s] chat: Snapshots were lost in the worker restart (the on-disk `output.step` floor, 7.1 MB, is intact). Re-saving the snapshot:
+[   0s] . save_snapshot
+[   0s]   <- {"result":"Snapshot 'valid_baseline' saved. Geometry captured: current_shape, part, baseline."}
+[   0s] chat: Recognition is too heavy for this casting, so I'll identify the target with bounded face inspection. First, the extreme faces and all cylinder faces (bores/bosses) with axes:
+[   0s] execute #27: from OCP.BRepAdaptor import BRepAdaptor_Surface from OCP.GeomAbs import GeomAbs_Cylinder, 
+[   0s]   <- {"result":"n cyl 340 n planes 113 t 0.5\n(506, 1.0, (np.float64(0.0), np.float64(0.0), np.float64(1.0)), (-52.15, 12.02, -4.3), 'boss', 5.08)\n(508, 1.0, (np.fl
+[   0s] execute #28: def faces_near(pt, rad):     p = Vector(*pt); out=[]     for i,ff in enumerate(bfs):      
+[   0s]   <- {"result":"=== Candidate A region (X<-40, Y 8..31) ===\n232 BSPLINE area=1.07 c=(-44.00,25.43,3.11) bb=[(-44.59,24.41,2.20)-(-42.97,25.85,3.70)] \n233 BSPLINE a
+[   0s] execute #29: print("=== Candidate B region ===") B_faces = [i for i,ff in enumerate(bfs) if (ff.center(
+[   0s]   <- {"result":"=== Candidate B region ===\n73 BSPLINE area=4.08 c=(36.76,-35.71,5.91) bb=[(35.41,-38.11,5.27)-(37.11,-33.45,7.25)] \n83 TORUS area=1.41 c=(35.62,-36
+[   0s] execute #30: print("=== Candidate C region ===") C_faces = [i for i,ff in enumerate(bfs) if (ff.center(
+[   0s]   <- {"result":"=== Candidate C region ===\n244 CYLINDER area=27.03 c=(-43.70,-13.80,3.96) bb=[(-44.29,-21.39,2.55)-(-42.29,-6.22,4.55)] R=2.000 ax=(0.000,1.000,0.00
+[   0s] execute #31: t0=time.time() crop_box = Box(14, 24, 30, align=(Align.MIN, Align.CENTER, Align.CENTER)).m
+[   0s]   <- {"result":"crop solids 1 faces 94 vol 3808.9\nRegistered 'boss_crop': volume=3809 mm³, faces=94\nX_s=-51.60: n faces 1 [(200.108, 2, (11.864, 26.609, -12.439, 3
+[   0s] . find_bored_bosses
+[   0s]   <- {"result":"{\"count\": 2, \"candidates\": [{\"hole_index\": 0, \"location\": [-45.3582, 19.2369, 8.9556], \"axis_into_part\": [0.0175, 0.0, -0.9998], \"outward_
+[   0s] execute #32: t0=time.time() # ---- named parameters from the confirmed feature ---- f_end   = bfs[469];
+[   0s]   <- {"result":"X_end=-52.28839 bore_r=2.50000 bore axis Y=19.23686 Z=-4.29675 draft=1.00000 deg end_round=0.5000\ncheck end face normal Vector: (X=-1, Y=0, Z=0)\nbo
+[   0s] execute #33: bc = np.array([tuple(f.center()) + (f.area,) for f in bfs]) rc = np.array([tuple(f.center(
+[   0s]   <- {"result":"n missing/changed faces away from tip: 261\nbbox of missing: [-50.2  -42.01 -24.97] [61.49 60.24 13.47]\n(0, 'TORUS', np.float64(62.13), (np.float64(
+[   0s] execute #34: t0=time.time() print("baseline vol now", round(baseline.volume,4), "faces", len(baseline.f
+[   0s]   <- {"result":"baseline vol now 99414.5406 faces 1004 valid True\nbaseline shells 1  body_rest shells 1 body_rest valid False\nfresh input: vol 99414.8556 cut vol 1
+[   0s] execute #35: from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse, BRepAlgoAPI_Common from OCP
+[   0s]   <- {"result":"fuzzy 0.0 as_solid error 'OCP.OCP.BRepAlgoAPI.BRepAlgoAPI_Cut' object has no attribute 'HasWarnings'\nfuzzy 0.0001 as_solid error 'OCP.OCP.BRepAlgoAP
+[   0s] execute #36: for fz in (0.0, 1e-4, 1e-3, 1e-2):     t0=time.time()     shp, op = occ_bool('cut', baseli
+[   0s]   <- {"result":"fuzzy 0.0 vol 99219.6646 (exp 99219.6628) faces 996 valid True t 3.0\nfuzzy 0.0001 vol 99219.6646 (exp 99219.6628) faces 996 valid True t 2.5\nfuzzy 
+[   0s] execute #37: t0=time.time() body_rest = as_solid(occ_bool('cut', baseline, tip_cutter)[0]) cut_face = [
+[   0s]   <- {"result":"Error: NameError: name 'Shape' is not defined\n\n{\"failure_class\": \"unknown\", \"suggested_fix\": \"Review the full error message and traceback fo
+[   0s] execute #38: from OCP.GProp import GProp_GProps from OCP.BRepGProp import BRepGProp def rawvol(s):     
+[   0s]   <- {"result":"delta=0: tip vol 194.8778 vs orig tip 194.8778 (diff 0.0000); end edges filleted 8\n tip bbox Vector: (X=-52.2884, Y=11.8592, Z=-12.4446) Vector: (X=
+[   0s] execute #39: t0=time.time() tip10, ne10 = build_tip(length_delta) tb10 = tip10.bounding_box() print("ti
+[   0s]   <- {"result":"tip10 vol 2143.0854, bbox X -62.2884..-51.3000, Y 11.8592..26.6145, Z -12.4446..3.8511, end edges 8, valid True\nedited vol 101362.7452 (expected 101
+[   0s] execute #40: show(edited, "edited")
+[   0s] >> validate(edited)
+[   0s]   <- {"result":"Registered 'edited': volume=1.014e+05 mm³, faces=1013\n\nSession objects: part (Solid, 1004 faces), baseline (Solid, 1004 faces), boss_crop (Solid, 9
+[   0s]   <- {"result":"Validity gate: PASS\n{\n  \"passes_gate\": true,\n  \"n_solids\": 1,\n  \"volume\": 101362.7452,\n  \"overlap_check\": \"exact\",\n  \"overlapping_pa
+[   0s] chat: **Validate PASS.** Before the heavier proof steps, I'll write the candidate to a *diagnostic* path; this also exercises the export gate and gives me a recovery copy if the worker resets.
+[   0s] >> export(edited)
+[   0s] execute #41: t0=time.time() # ---- exact boolean delta, cropped to the boss neighbourhood ---- crop = B
+[   0s]   <- {"result":"Exported to /tmp/cgb_fixture.FvjCtX/diag/edited_candidate.step\nvolume 1.014e+05 mm³, bbox 123.8×102.5×41 mm, 1013 faces"}
+[   0s]   <- {"result":"Error: RuntimeError: no solid or shell found\n\nHint: Degenerate or empty shape after boolean operation. The cutter probably doesn't overlap the base
+[   0s] chat: The candidate export passed the gate (no FAIL in the report). My crop `common` returned empty. Debugging which boolean failed:
+[   0s] execute #42: r1, op1 = occ_bool('common', baseline, crop) print("common baseline&crop: done", r1 is not
+[   0s]   <- {"result":"Error: AttributeError: 'OCP.OCP.BRepAlgoAPI.BRepAlgoAPI_Common' object has no attribute 'HasErrors'\n\n{\"failure_class\": \"unknown\", \"suggested_f
+[   0s] execute #43: r1, op1 = occ_bool('common', baseline, crop) print("common baseline&crop: type", r1.ShapeT
+[   0s]   <- {"result":"Error: AttributeError: 'NoneType' object has no attribute 'volume'\n\nHint: Shape is None. If you used BuildPart context manager, access the result w
+[   0s] execute #44: out=[] try:     out.append(("crop", type(crop).__name__, None if crop is None else round(c
+[   0s]   <- {"result":"[('crop', 'Box', 144000.0), ('r1', ('TopAbs_ShapeEnum.TopAbs_COMPOUND', 0.0))]\n\nSession objects: part (Solid, 1004 faces), baseline (Solid, 1004 fa
+[   0s] execute #45: t0=time.time() X_crop = -51.0 crop = Box(30, 60, 60, align=(Align.MAX, Align.CENTER, Align
+[   0s]   <- {"result":"b_crop vol 255.0367  e_crop vol 2203.2443\nexact delta: added 1948.2076 mm3, removed 0.000000 mm3; expected added 1948.2076\nadded bbox Vector: (X=-6
+[   0s] . Bash
+[   0s] execute #46: show(import_step("/tmp/cgb_fixture.FvjCtX/input.step"), "original")
+[   0s]   <- total 13904 drwxr-xr-x 2 teleclaude teleclaude    4096 Sep 26 06:21 . drwx------ 4 teleclaude teleclaude    4096 Sep 26 05:57 .. -rw-r--r-- 1 teleclaude telecla
+[   0s]   <- {"result":"Registered 'original': volume=9.941e+04 mm³, faces=1004\n--- current_shape (\"original\") ---\nvolume: 9.941e+04 (+9.75e+04, +5002.9%) mm³  |  bbox: 
+[   0s] . compare
+[   0s]   <- MCP server "build123d" tool "compare" sent no response or progress for 301s; aborting. If this server is configured in your MCP settings, set a per-server "time
+[   0s] chat: Status: the edit is built and proven by exact boolean delta. The prescribed full-part `compare` timed out on this 1000-face casting, just as recognition did. Checking whether the worker survived:
+[   0s] execute #47: print({k: (len(globals()[k].faces()), round(globals()[k].volume,4)) for k in ('baseline','
+[   0s]   <- {"result":"{'baseline': (1005, 99414.5546)}\n\nSession objects: part (Solid, 1004 faces), baseline (Solid, 1005 faces)"}
+[   0s] . import_cad_file
+[   0s]   <- {"result":"{\n  \"volume\": 101361.2634,\n  \"solids\": 1,\n  \"faces\": 1013,\n  \"edges\": 2431,\n  \"vertices\": 1435,\n  \"bbox\": {\n    \"xsize\": 123.817
+[   0s] . bank_candidate
+[   0s]   <- {"result":"{\n  \"banked\": true,\n  \"filename\": \"/tmp/cgb_fixture.FvjCtX/output.step\",\n  \"replaced_existing_output\": true,\n  \"snapshot_saved\": true,\
+[   0s] . render_view
+[   0s] . render_view
+[   0s]   <- [SEND: /tmp/cgb_fixture.FvjCtX/diag/edited_top.png] Rendered via 3d pipeline.
+[   0s]   <- [SEND: /tmp/cgb_fixture.FvjCtX/diag/edited_front.png] Rendered via 3d pipeline.
+[   0s] chat: Both renders match the references everywhere except the −X boss, which now protrudes visibly further, as requested. Last check: bore continuity and the new end face on the written `output.step`.
+[   0s] execute #48: from build123d import import_step from OCP.BRepAdaptor import BRepAdaptor_Surface from OCP
+[   0s]   <- {"result":"output: solids 1 faces 1013 bbox X -62.2884..61.5290 Y -42.0137..60.5276 Z -25.0265..15.9735\nØ5 bore faces (Xmin, Xmax, area): [(-62.2884, -51.3, 17
+[   0s] chat: Bore and end face are confirmed on the written file. Checking for stray files I created in the working directory:
+[   0s] . Bash
+[   0s]   <- total 23576 drwx------ 4 teleclaude teleclaude    4096 Sep 26 06:31 . drwxrwxrwt 1 root       root         69632 Sep 26 06:32 .. -rw-r--r-- 1 teleclaude telecla
+[   0s] chat: I lengthened the square boss by 10 mm, and the result is in `/tmp/cgb_fixture.FvjCtX/output.step`. It passed the written-and-reimported STEP check: one valid, watertight solid, 7.7 MB. The full-part s
+[   0s] RESULT (3326s): I lengthened the square boss by 10 mm, and the result is in `/tmp/cgb_fixture.FvjCtX/output.step`. It passed the written-and-reimported STEP check: one valid, w

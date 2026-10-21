@@ -117,7 +117,7 @@ $PROMPT_TEXT" \
   --model "$MODEL" \
   "${EFFORT_ARGS[@]}" \
   --output-format stream-json \
-  --print-timeout 90m \
+  --print-timeout 120m \
   > plan.stream.jsonl
 
 CONVERSATION_ID="$(jq -r 'select(.event == "init") | .conversation_id' plan.stream.jsonl | head -n1)"
@@ -151,7 +151,7 @@ if [[ "$TASK" == "editing" && "$RECOGNITION_POLICY" == "required-in-edit-plannin
     --model "$MODEL" \
     "${EFFORT_ARGS[@]}" \
     --output-format stream-json \
-    --print-timeout 90m \
+    --print-timeout 120m \
     >> plan.stream.jsonl
 fi
 
@@ -181,7 +181,7 @@ agy --print "$EXECUTE_INSTRUCTION" \
   --model "$MODEL" \
   "${EFFORT_ARGS[@]}" \
   --output-format stream-json \
-  --print-timeout 90m \
+  --print-timeout 120m \
   > execute.stream.jsonl
 
 cat execute.stream.jsonl >> stream.jsonl

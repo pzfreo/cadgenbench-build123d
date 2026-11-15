@@ -41,15 +41,34 @@ def _result_payload(content: Any) -> dict[str, Any] | None:
     return payload
 
 
+def _is_step_path_target(arguments: dict[str, Any]) -> bool:
+    target = str(arguments.get("target", "")).strip().lower()
+    return target.endswith((".step", ".stp"))
+
+
+def _has_result_hits(result: dict[str, Any]) -> bool:
+    if result.get("returned", 0) > 0:
+        return True
+    features = result.get("features")
+    if isinstance(features, list) and len(features) > 0:
+        return True
+    if isinstance(features, dict) and any(bool(v) for v in features.values()):
+        return True
+    return False
+
+
 def audit(path: Path) -> dict[str, Any]:
     recognition_calls = 0
     inventory_calls = 0
     targeted_calls = 0
+    detail_calls = 0
     targeted_hits = 0
     targeted_misses = 0
     targeted_errors = 0
     targeted_unknown = 0
-    face_resolution_calls = 0
+    select_faces_calls = 0
+    legacy_recognition_faces_calls = 0
+    diff_step_calls = 0
     imported_part = False
     recognition_after_import = False
     pending: dict[str, tuple[str, dict[str, Any]]] = {}
@@ -78,17 +97,30 @@ def audit(path: Path) -> dict[str, Any]:
 
                 if name == "import_cad_file" and arguments.get("name") == "part":
                     imported_part = True
-                elif name == "recognise_features":
+                elif name in {"inspect_features", "recognise_features"}:
                     recognition_calls += 1
-                    recognition_after_import = recognition_after_import or imported_part
+                    valid_source = imported_part or (
+                        name == "inspect_features" and _is_step_path_target(arguments)
+                    )
+                    recognition_after_import = recognition_after_import or valid_source
                     families = arguments.get("families")
-                    if families is None or families == "" or families == []:
+                    feature_ids = arguments.get("feature_ids")
+                    has_families = families not in (None, "", [])
+                    has_feature_ids = feature_ids not in (None, "", [])
+                    if has_feature_ids:
+                        detail_calls += 1
+                    if not has_families and not has_feature_ids:
                         inventory_calls += 1
-                    else:
+                    elif has_families:
                         targeted_calls += 1
+                elif name == "diff_step":
+                    diff_step_calls += 1
                 elif name == "execute":
                     code = str(arguments.get("code", ""))
-                    face_resolution_calls += len(
+                    if re.search(r"\bimport_step\s*\(", code):
+                        imported_part = True
+                    select_faces_calls += len(re.findall(r"\bselect_faces\s*\(", code))
+                    legacy_recognition_faces_calls += len(
                         re.findall(r"\brecognition_faces\s*\(", code)
                     )
 
@@ -97,10 +129,10 @@ def audit(path: Path) -> dict[str, Any]:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
                 call = pending.get(str(block.get("tool_use_id", "")))
-                if call is None or call[0] != "recognise_features":
+                if call is None or call[0] not in {"inspect_features", "recognise_features"}:
                     continue
                 families = call[1].get("families")
-                if families is None or families == "" or families == []:
+                if families in (None, "", []):
                     continue
                 if block.get("is_error"):
                     targeted_errors += 1
@@ -110,14 +142,14 @@ def audit(path: Path) -> dict[str, Any]:
                     targeted_unknown += 1
                 elif result.get("error"):
                     targeted_errors += 1
-                elif result.get("returned", 0) > 0:
+                elif _has_result_hits(result):
                     targeted_hits += 1
                 else:
                     targeted_misses += 1
 
+    face_resolution_calls = select_faces_calls + legacy_recognition_faces_calls
     recognition_completed = (
-        imported_part
-        and recognition_after_import
+        recognition_after_import
         and inventory_calls > 0
         and targeted_calls > 0
     )
@@ -130,11 +162,14 @@ def audit(path: Path) -> dict[str, Any]:
         "recognition_calls": recognition_calls,
         "inventory_calls": inventory_calls,
         "targeted_calls": targeted_calls,
+        "detail_calls": detail_calls,
         "targeted_hits": targeted_hits,
         "targeted_misses": targeted_misses,
         "targeted_errors": targeted_errors,
         "targeted_unknown": targeted_unknown,
-        "recognition_faces_calls": face_resolution_calls,
+        "select_faces_calls": select_faces_calls,
+        "recognition_faces_calls": legacy_recognition_faces_calls,
+        "diff_step_calls": diff_step_calls,
         "recognition_completed": recognition_completed,
         "resolution_requirement_satisfied": resolution_requirement_satisfied,
     }

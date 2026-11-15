@@ -185,14 +185,17 @@ CGB_RECOGNITION_POLICY=required-in-edit-execution \
   'build123d-mcp @ file:///absolute/path/to/build123d-mcp' 8 240
 ```
 
-The execution prompt re-imports the starting part, runs compact and targeted
-recognition, requires same-session `recognition_faces()` use for returned
-features, and bounds conventional fallback after a miss. Each fixture writes
-`recognition_audit.json`; `run_meta.json` records the selected recognition
-policy. `CGB_FORCE_RECOGNITION=1` remains the legacy planning-turn policy.
+The execution prompt banks a gate-clean baseline, runs compact and targeted
+`inspect_features()` queries (including co-located interior cavity/blend checks)
+through the stateless `specify-core` STEP boundary, resolves live B-rep faces
+statelessly via `select_faces()`, verifies zero unintended `removed`/`added`
+collateral features with `diff_step()`, and bounds conventional fallback after a
+miss. Each fixture writes `recognition_audit.json`; `run_meta.json` records the
+selected recognition policy. `CGB_FORCE_RECOGNITION=1` remains the legacy
+planning-turn policy.
 
-Broken-input experiments can require a clean repaired baseline before strict
-recognition without weakening or special-casing `b123d-recognisers`:
+Broken-input experiments can require a clean repaired baseline before feature
+inspection without weakening or special-casing the recogniser:
 
 ```bash
 CGB_RECOGNITION_POLICY=repair-first-then-strict-recognition \
@@ -203,22 +206,25 @@ CGB_RECOGNITION_POLICY=repair-first-then-strict-recognition \
 ```
 
 This policy uses the MCP's generic defect locator and repair ladder, requires a
-gate-clean STEP round trip before calling the unchanged strict recogniser, and
-contains no fixture IDs, face indices, coordinates, or expected constructions.
-Claude editing runs use one ordinary agent turn and a static editing prompt. The
-prompt tells the agent when to use `repair_advice`, `recognise_features`, and
-`recognition_faces()`; the harness does not force a planning turn, inspect the
-transcript mid-run, or retry missing tool use. It writes a non-blocking
-`recognition_audit.json` after the run so recognition uptake remains measurable
-without changing agent control flow.
+gate-clean STEP round trip before calling `inspect_features()`, and contains no
+fixture IDs, face indices, coordinates, or expected constructions. Claude
+editing runs use one ordinary agent turn and a static editing prompt. The prompt
+tells the agent when to use `repair_advice`, `inspect_features`, `select_faces()`,
+and `diff_step` (replacing deprecated Python `quiddity` handles and slow
+OCCT-boolean/Hausdorff shape comparison); the harness does not force a planning
+turn, inspect the transcript mid-run, or retry missing tool use. It writes a
+non-blocking `recognition_audit.json` after the run so recognition and diff
+uptake remain measurable without changing agent control flow.
 
 For the shorter server-guided variant, set
 `CGB_PROMPT_STYLE=mcp-guided-compact`. It uses the generic
 `prompt_editing_mcp_guided_compact.txt`: `bank_candidate()` atomically preserves
 the last gate-clean STEP, failed baselines route through the MCP locator and
-repair advice, and recognition begins only after a clean baseline exists. This
-is still one ordinary model turn; tool use is prompted and audited, not forced
-by harness control flow. The selected prompt style is recorded in `run_meta.json`.
+repair advice, stateless `inspect_features()` + `select_faces()` begins only
+after a clean baseline exists, and `diff_step()` verifies feature-level changes
+and face preservation before final promotion. This is still one ordinary model
+turn; tool use is prompted and audited, not forced by harness control flow. The
+selected prompt style is recorded in `run_meta.json`.
 
 ### Gemini through Codex + Vercel AI Gateway
 

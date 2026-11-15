@@ -153,3 +153,54 @@ def test_audit_requires_targeted_call_after_inventory(tmp_path: Path):
     )
 
     assert audit(stream)["recognition_completed"] is False
+
+
+def test_audit_accepts_specify_inspect_features_select_faces_and_diff_step(
+    tmp_path: Path,
+):
+    stream = tmp_path / "stream.jsonl"
+    stream.write_text(
+        "\n".join(
+            [
+                _assistant("inventory", "inspect_features", {"target": "input.step"}),
+                _result("inventory", {"families": {"bosses": 2, "holes": 2}}),
+                _assistant(
+                    "targeted",
+                    "inspect_features",
+                    {"target": "input.step", "families": ["bosses", "holes"]},
+                ),
+                _result("targeted", {"features": [{"id": "bosses:0"}]}),
+                _assistant(
+                    "detail",
+                    "inspect_features",
+                    {"target": "input.step", "feature_ids": ["bosses:0"]},
+                ),
+                _assistant(
+                    "execute",
+                    "execute",
+                    {
+                        "code": (
+                            "part = import_step('input.step')\n"
+                            "faces = select_faces(part, kind='cylinder', radius=32.5)"
+                        )
+                    },
+                ),
+                _assistant(
+                    "diff",
+                    "diff_step",
+                    {"old": "input.step", "new": "edited"},
+                ),
+            ]
+        )
+    )
+
+    result = audit(stream)
+
+    assert result["recognition_completed"] is True
+    assert result["inventory_calls"] == 1
+    assert result["targeted_calls"] == 1
+    assert result["detail_calls"] == 1
+    assert result["targeted_hits"] == 1
+    assert result["select_faces_calls"] == 1
+    assert result["diff_step_calls"] == 1
+    assert result["resolution_requirement_satisfied"] is True

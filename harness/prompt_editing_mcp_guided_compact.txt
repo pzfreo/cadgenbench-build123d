@@ -18,25 +18,33 @@ because you must read the gate result before proceeding.
    written/reimported STEP privately and promotes it only on PASS. If `banked` is
    false, do not perform the requested edit: call `locate_gate_defects("part")`, then
    `repair_advice(error_text=<actual gate failure>, goal=<requested edit>,
-   context=<locator diagnosis>)`. Implement the smallest explicit, generic repair
-   justified by its face/edge/UV evidence, validate it, and retry `bank_candidate`.
-   Restore or discard failed candidates; never overwrite the safe floor with one.
+   context=<locator diagnosis>)`. Implement the smallest explicit, local topology
+   repair justified by its face/edge/UV evidence (preserving envelope and volume
+   within defect tolerance), validate it, and retry `bank_candidate`. Restore or
+   discard failed candidates; never overwrite the safe floor with one.
 
-2. Only after a baseline is banked, follow the bank result's recognition advice.
-   Call `recognise_features(object_name=<clean object>)` once without `families`,
-   then call only the relevant supported family. Resolve returned `@feature[...]`
-   handles inside `execute()` with `recognition_faces(handle)` and inspect those
-   exact faces. If a family explicitly returns no candidates, use a bounded
-   conventional face/feature search. Re-run recognition after replacing its source
-   object. Confirm all spatial qualifiers and the stated current dimension before
-   editing; use the renders once if coordinates alone leave the target ambiguous.
-   When more than one geometric candidate remains, enumerate the bounded candidate
-   set in a compact evidence table (position, signed normal/axis, dimensions,
-   boundary loops, and adjacent faces) and rank every candidate against every noun
-   and spatial qualifier in the request. A family match alone is not confirmation.
-   For an annular opening, inspect every planar two-concentric-circle face and its
-   adjoining cylinders; radial thickness and axial position often distinguish two
-   otherwise plausible ends of the same bore.
+2. Only after a baseline is banked, inspect the part through the stateless STEP
+   recogniser (`specify-core`). Call `inspect_features(target="input.step")` (or the
+   clean baseline object) once without `families` for the compact inventory, then call
+   `inspect_features(target=..., families=[...])` for the target family plus any
+   spatially co-located interior/transition families (`holes`, `blends`, `fillets`) at
+   the same footprint. Cast or shelled parts frequently hide blind interior cavities
+   inside raised bosses or behind walls that do not appear in exterior renders; check
+   whether a target feature is solid or uniformly shelled before choosing how to edit
+   it, and never slice across an exterior base plane if an interior cavity rises into
+   that region. Pass `feature_ids=[...]` to fetch exact caller-frame analytic face
+   descriptors (`kind`, `centroid`, `direction`, `origin`, `radius`, `area`), and
+   match live B-rep faces inside `execute()` statelessly with `select_faces(part, ...)`
+   (never assume STEP/recogniser face IDs equal `part.faces()` indices). If a family
+   returns no candidates, use a bounded conventional face search. Confirm all spatial
+   qualifiers and the stated current dimension before editing; use the renders once if
+   coordinates alone leave the target ambiguous. When more than one geometric
+   candidate remains, enumerate the bounded candidate set in a compact evidence table
+   (position, signed normal/axis, dimensions, boundary loops, and adjacent faces) and
+   rank every candidate against every noun and spatial qualifier in the request. A
+   family match alone is not confirmation. For an annular opening, inspect every
+   planar two-concentric-circle face and its adjoining cylinders; radial thickness and
+   axial position often distinguish two otherwise plausible ends of the same bore.
 
    Do not silently relabel a requested axis because recognised geometry uses a
    different CAD axis. Establish the complete signed mapping between the request's
@@ -46,12 +54,23 @@ because you must read the gate result before proceeding.
    compare both bounded hypotheses with a render or section before editing; never
    default to the selected face normal.
 
-3. Modify the existing B-rep rather than rebuilding the part. Bind the current
-   value, target value, and delta to named variables and apply only the requested
-   change. After each geometry change, validate before further work. Compare the
-   clean baseline/original against the candidate with `compare(kind="shape")` and
-   prove the target, direction, magnitude, added/removed material, and preservation
-   of unrelated geometry.
+3. Modify the existing B-rep rather than rebuilding the part, preferring local face
+   offsetting/replacement and sewing over broad boolean cuts that touch adjacent
+   fillets or interior cavities. Bind the current value, target value, and delta to
+   named variables and apply only the requested change. After each geometry change,
+   validate before further work. Verify the candidate against the clean baseline with
+   `diff_step(old="input.step", new=<candidate>)` (add `render=True` when a visual
+   ghost-overlay check helps confirm scope):
+   - Confirm `adapted` and `planar_deltas` match the requested feature, direction, and
+     magnitude. On top-filleted or capped bosses/holes, cross-check `sizes` deltas
+     (`height`/`depth`) against the moved cap/fillet displacement (`moved`) and
+     analytic face coordinates, because recogniser cap/fillet absorption can flip when
+     a shaft shortens.
+   - Require `removed` (`orphaned`) and `added` (`new`) to be empty unless the request
+     explicitly removes or adds features; any orphaned fillet, chamfer, blend, hole,
+     or tangency regression means collateral damage that must be fixed or rejected.
+   - Confirm `unchanged_faces` and `measures` (`volume`, `bbox`) match the expected
+     analytical change with all unrelated faces preserved.
 
 4. Promote a final candidate only with
    `bank_candidate(filename="{OUTPUT}", object_name=<candidate>,

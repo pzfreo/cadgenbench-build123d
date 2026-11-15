@@ -10,9 +10,17 @@ joined=" $* "
   echo "missing repair-advice guidance in static edit prompt" >&2
   exit 3
 }
-[[ "$joined" == *"recognise_features(object_name="* ]] || {
-  echo "missing recognition guidance in static edit prompt" >&2
+[[ "$joined" == *"inspect_features(target="* ]] || {
+  echo "missing inspect_features guidance in static edit prompt" >&2
   exit 4
+}
+[[ "$joined" == *"diff_step(old="* ]] || {
+  echo "missing diff_step guidance in static edit prompt" >&2
+  exit 7
+}
+[[ "$joined" == *"mcp__build123d__inspect_features"* && "$joined" == *"mcp__build123d__diff_step"* ]] || {
+  echo "inspect_features/diff_step absent from Claude allowed tools" >&2
+  exit 8
 }
 if [[ "${FAKE_EXPECT_BANK:-0}" == "1" ]]; then
   [[ "$joined" == *"bank_candidate(filename="* ]] || {
@@ -28,10 +36,12 @@ fi
 printf '%s\n' '{"type":"system","subtype":"init","session_id":"recognition-test-session"}'
 if [[ "${FAKE_CLAUDE_SKIP_RECOGNITION:-0}" != "1" ]]; then
   printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"import","name":"mcp__build123d__import_cad_file","input":{"path":"input.step","name":"part"}}]},"session_id":"recognition-test-session"}'
-  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"inventory","name":"mcp__build123d__recognise_features","input":{"object_name":"part"}}]},"session_id":"recognition-test-session"}'
-  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"targeted","name":"mcp__build123d__recognise_features","input":{"object_name":"part","families":"holes"}}]},"session_id":"recognition-test-session"}'
-  printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"targeted","content":"{\"result\":\"{\\\"matched\\\":1,\\\"returned\\\":1}\"}"}]},"session_id":"recognition-test-session"}'
-  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"resolve","name":"mcp__build123d__execute","input":{"code":"faces = recognition_faces(\"@feature[r1/holes/0]\")"}}]},"session_id":"recognition-test-session"}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"inventory","name":"mcp__build123d__inspect_features","input":{"target":"input.step"}}]},"session_id":"recognition-test-session"}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"targeted","name":"mcp__build123d__inspect_features","input":{"target":"input.step","families":["holes"]}}]},"session_id":"recognition-test-session"}'
+  printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"targeted","content":"{\"result\":\"{\\\"features\\\":[{\\\"id\\\":\\\"holes:0\\\"}]}\"}"}]},"session_id":"recognition-test-session"}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"detail","name":"mcp__build123d__inspect_features","input":{"target":"input.step","feature_ids":["holes:0"]}}]},"session_id":"recognition-test-session"}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"resolve","name":"mcp__build123d__execute","input":{"code":"faces = select_faces(part, kind=\"cylinder\", radius=5.0)"}}]},"session_id":"recognition-test-session"}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"diff","name":"mcp__build123d__diff_step","input":{"old":"input.step","new":"edited"}}]},"session_id":"recognition-test-session"}'
 fi
 printf 'ISO-10303-21;\nEND-ISO-10303-21;\n' > output.step
 printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"edited and exported","session_id":"recognition-test-session"}'

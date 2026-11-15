@@ -38,10 +38,13 @@ gate **cannot be run locally under 0.2.0** at all. Fall back to what README.md's
 treat the HF Space's own gate as the real verdict. Do not rabbit-hole trying to build
 open3d/nlopt from source locally — upload and let the Space gate.
 
-## Verifying edits actually took (no-op detection)
+## Verifying edits actually took (no-op & collateral-damage detection)
 
 The editing benchmark scores a no-op against a baseline, so a valid-but-unchanged output
-can mask a failed edit. To audit a sweep's edits, compare each `output.step` to its
-`input.step` (tessellation Hausdorff; volume/bbox fallback when tessellation fails). A pure
-**tangential move** reads ~0 displacement even when correct — classify those by reading
-`<id>_in/edit_description.txt`, not by the metric alone.
+can mask a failed edit. Audit a sweep's edits with `harness/audit_specify_edits.py`
+(`uv run --with specify-core python harness/audit_specify_edits.py work/<run> results/<run>`),
+which uses `specify-core`'s pure-Rust STEP feature recogniser and revision differ plus an
+analytic face-signature diff instead of slow OCCT 3D booleans or tessellation Hausdorff.
+This catches both pure **tangential moves** (feature/centroid shift at zero volume delta)
+and **bare planar wall offsets** (analytic face-signature + volume delta), while flagging
+unintended collateral damage via `orphaned` feature counts.

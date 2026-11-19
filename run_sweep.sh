@@ -93,6 +93,7 @@ esac
 case "$MODEL_ID" in
   agy/*-low)    REASONING_EFFORT="low" ;;
   agy/*-medium) REASONING_EFFORT="medium" ;;
+  agy/*-xhigh)  REASONING_EFFORT="xhigh" ;;
   agy/*-high)   REASONING_EFFORT="high" ;;
 esac
 

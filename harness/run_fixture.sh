@@ -227,10 +227,24 @@ wait_for_quota_reset() {
     reset=$now
   fi
   target=$((reset + grace))
+  # Weekly / Fable limits reset days away, but the user can reset them by hand.
+  # Every CGB_QUOTA_PROBE_SECONDS (default 600) send a one-word request on a
+  # fresh conversation with the same model: if it is allowed, resume now.
+  probe_every="${CGB_QUOTA_PROBE_SECONDS:-600}"
+  [[ "$probe_every" =~ ^[0-9]+$ ]] || probe_every=600
+  next_probe=$(( $(date +%s) + probe_every ))
   while true; do
     now="$(date +%s)"
     remaining=$((target - now))
     (( remaining <= 0 )) && break
+    if (( remaining > probe_every && now >= next_probe )); then
+      next_probe=$((now + probe_every))
+      if claude -p "Reply with: ok" --model "$MODEL" --output-format stream-json --verbose \
+           --disable-slash-commands > quota_probe.jsonl 2>&1 && ! quota_rejected quota_probe.jsonl; then
+        echo "quota probe allowed: resuming before the scheduled reset"
+        break
+      fi
+    fi
     step=$remaining
     (( step > 60 )) && step=60
     echo "quota wait: ${remaining}s until retry; fixture workspace and MCP session retained"

@@ -35,6 +35,11 @@ if [[ "${1:-}" == "--one" ]]; then
   WORKROOT="$HERE/work/$RUN"; RESULTS="$HERE/results/$RUN"
   IN="$WORKROOT/${fid}_in"; WORK="$WORKROOT/${fid}_run"
   mkdir -p "$WORKROOT" "$RESULTS/$fid"
+  # Optional quota-aware start gate (Claude subscription runs): blocks until a
+  # new fixture may start. See harness/quota_gate.sh.
+  if [[ -n "${CGB_START_GATE:-}" ]]; then
+    "$CGB_START_GATE" "$fid" "$WORKROOT" >> "$WORKROOT/quota_gate.log" 2>&1
+  fi
   echo "[$fid] start"
   if ! uv run --with huggingface_hub python "$HERE/harness/fetch_fixture.py" "$fid" "$IN" \
         > "$WORKROOT/${fid}.fetch.log" 2>&1; then
